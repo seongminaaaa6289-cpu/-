@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Castle Defense</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Courier New', monospace; overflow: hidden; }
+  #gameContainer { position: relative; width: 500px; height: 500px; }
+  canvas { display: block; border: 2px solid #4a4a8a; box-shadow: 0 0 30px rgba(100,100,255,0.3); }
+  #ui-top { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: space-between; pointer-events: none; z-index: 10; }
+  #ui-bottom { position: absolute; bottom: 0; left: 0; width: 100%; z-index: 10; }
+  .ui-panel { background: rgba(0,0,0,0.75); border: 1px solid #555; padding: 6px 10px; border-radius: 4px; color: #eee; font-size: 11px; }
+  #hpBar { display: flex; flex-direction: column; gap: 2px; min-width: 130px; }
+  #hpBg { width: 120px; height: 10px; background: #333; border-radius: 5px; overflow: hidden; }
+  #hpFill { height: 100%; background: linear-gradient(90deg, #f00, #0f0); transition: width 0.2s; border-radius: 5px; }
+  #minimap-panel { min-width: 80px; }
+  #minimap { border: 1px solid #888; }
+  #shopPanel { display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.85); border-top: 1px solid #555; flex-wrap: wrap; justify-content: center; pointer-events: all; }
+  .shopBtn { background: rgba(50,50,80,0.9); border: 1px solid #666; color: #ddd; font-size: 9px; padding: 3px 6px; cursor: pointer; border-radius: 3px; white-space: nowrap; }
+  .shopBtn:hover { background: rgba(80,80,120,0.9); border-color: #aaa; }
+  #contextMenu { position: absolute; background: rgba(0,0,0,0.9); border: 1px solid #888; padding: 4px; display: none; z-index: 20; pointer-events: all; }
+  .ctxBtn { display: block; width: 100%; background: none; border: none; color: #ddd; font-size: 11px; padding: 4px 10px; cursor: pointer; text-align: left; font-family: 'Courier New', monospace; }
+  .ctxBtn:hover { background: rgba(255,255,255,0.1); }
+  #messageLog { position: absolute; bottom: 38px; left: 0; width: 100%; pointer-events: none; z-index: 15; }
+  .msgLine { color: #ffdd88; font-size: 10px; text-align: center; text-shadow: 1px 1px 2px #000; opacity: 1; transition: opacity 1s; }
+  #waveInfo { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-size: 18px; font-weight: bold; text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 20; display: none; }
+  #joystickZone { position: absolute; bottom: 70px; left: 8px; width: 100px; height: 100px; z-index: 30; pointer-events: all; touch-action: none; user-select: none; }
+  #joystickBase { position: absolute; width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.35); top: 5px; left: 5px; box-shadow: 0 0 12px rgba(100,150,255,0.2); }
+  #joystickKnob { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.6), rgba(100,150,255,0.7)); border: 2px solid rgba(200,220,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.6); top: 26px; left: 26px; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="500" height="500"></canvas>
+  <div id="ui-top">
+    <div class="ui-panel" id="hpBar">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span id="hpText">HP: 100/100</span>
+        <span id="atkLvText" style="color:#ffcc44;font-size:10px;">ATK Lv.1</span>
+      </div>
+      <div id="hpBg"><div id="hpFill" style="width:100%"></div></div>
+      <div id="coinText" style="color:#ffd700;">🪙 0</div>
+    </div>
+    <div class="ui-panel" id="minimap-panel">
+      <div style="font-size:9px;margin-bottom:2px;text-align:center;">MINIMAP</div>
+      <canvas id="minimap" width="70" height="70"></canvas>
+    </div>
+  </div>
+  <div id="ui-bottom">
+    <div id="shopPanel">
+      <button class="shopBtn" onclick="game.buyAttackSpeed()">⚡ ATK Spd (10🪙)</button>
+      <button class="shopBtn" onclick="game.openHireMenu('follow')">⚔️ 고용-동행</button>
+      <button class="shopBtn" onclick="game.openHireMenu('castle')">🏰 고용-배치</button>
+      <button class="shopBtn" onclick="game.buyBuilding('wall')">🧱 방벽 (15🪙)</button>
+      <button class="shopBtn" onclick="game.buyBuilding('bombtower')">💣 폭탄탑 (30🪙)</button>
+      <button class="shopBtn" onclick="game.buyBuilding('arrowtower')">🏹 화살탑 (25🪙)</button>
+      <button class="shopBtn" onclick="game.buyBuilding('barracks')">🏠 병사소 (40🪙)</button>
+      <button class="shopBtn" onclick="game.rebuildCastle()">🔨 성 재건 (50🪙)</button>
+    </div>
+  </div>
+  <div id="contextMenu">
+    <button class="ctxBtn" id="ctx1"></button>
+    <button class="ctxBtn" id="ctx2"></button>
+    <button class="ctxBtn" id="ctx3" style="display:none"></button>
+  </div>
+  <div id="messageLog"></div>
+  <div id="waveInfo"></div>
+  <div id="joystickZone">
+    <div id="joystickBase"></div>
+    <div id="joystickKnob"></div>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimap');
+const mCtx = miniCanvas.getContext('2d');
+
+// ===== JOYSTICK (global scope so IIFE can access) =====
+let joyActive = false;
+let joyDx = 0, joyDy = 0;
+(function initJoystick() {
+  const zone = document.getElementById('joystickZone');
+  const knob = document.getElementById('joystickKnob');
+  const JOY_R = 26, CX = 50, CY = 50;
+
+  function setKnob(rawDx, rawDy) {
+    const len = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+    const cDx = len > JOY_R ? rawDx / len * JOY_R : rawDx;
+    const cDy = len > JOY_R ? rawDy / len * JOY_R : rawDy;
+    knob.style.left = (CX - 19 + cDx) + 'px';
+    knob.style.top  = (CY - 19 + cDy) + 'px';
+    joyDx = Math.min(1, Math.max(-1, rawDx / JOY_R));
+    joyDy = Math.min(1, Math.max(-1, rawDy / JOY_R));
+  }
+
+  function onStart(e) {
+    e.preventDefault(); e.stopPropagation();
+    joyActive = true;
+    const src = e.touches ? e.touches[0] : e;
+    const r = zone.getBoundingClientRect();
+    setKnob(src.clientX - r.left - CX, src.clientY - r.top - CY);
+  }
+  function onMove(e) {
+    if (!joyActive) return;
+    e.preventDefault();
+    const src = e.touches ? e.touches[0] : e;
+    const r = zone.getBoundingClientRect();
+    setKnob(src.clientX - r.left - CX, src.clientY - r.top - CY);
+  }
+  function onEnd() {
+    joyActive = false; joyDx = 0; joyDy = 0;
+    knob.style.left = (CX - 19) + 'px';
+    knob.style.top  = (CY - 19) + 'px';
+  }
+
+  zone.addEventListener('mousedown',  onStart, { passive: false });
+  zone.addEventListener('touchstart', onStart, { passive: false });
+  window.addEventListener('mousemove', onMove, { passive: false });
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('mouseup',   onEnd);
+  window.addEventListener('touchend',  onEnd);
+
+  // Keep joystick above shopPanel dynamically
+  function repositionJoy() {
+    const shop = document.getElementById('shopPanel');
+    if (shop) {
+      const h = shop.offsetHeight;
+      zone.style.bottom = (h + 8) + 'px';
+    }
+  }
+  repositionJoy();
+  window.addEventListener('resize', repositionJoy);
+  setTimeout(repositionJoy, 200);
+})();
+
+const WORLD = 5000, VIEW = 500, MINI = 70;
+const SCALE = MINI / WORLD;
+
+// ========== DRAW HELPERS ==========
+function drawSlime(cx, cy, r, color, variant) {
+  ctx.save();
+  // body semicircle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI, 0, false);
+  ctx.lineTo(cx + r, cy + r * 0.4);
+  ctx.quadraticCurveTo(cx, cy + r * 0.8, cx - r, cy + r * 0.4);
+  ctx.closePath();
+  if (variant === 'fire') {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, '#ffdd00'); g.addColorStop(0.5, '#ff6600'); g.addColorStop(1, '#cc0000');
+    ctx.fillStyle = g;
+  } else { ctx.fillStyle = color; }
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  // eyes
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.1, r * 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.3, cy - r * 0.1, r * 0.15, 0, Math.PI * 2); ctx.fill();
+  // sword slime
+  if (variant === 'sword') {
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(cx + r * 0.9, cy - r * 0.8, r * 0.2, r * 1.2);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(cx + r * 0.75, cy - r * 0.8, r * 0.5, r * 0.12);
+    // tip
+    ctx.beginPath(); ctx.moveTo(cx + r, cy - r * 0.8);
+    ctx.lineTo(cx + r * 0.9, cy - r * 1.05); ctx.lineTo(cx + r * 1.1, cy - r * 1.05); ctx.closePath();
+    ctx.fillStyle = '#ddd'; ctx.fill();
+  }
+  // fire flames
+  if (variant === 'fire') {
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * r * 0.3, cy - r * 0.9);
+      ctx.lineTo(cx + i * r * 0.3 - r * 0.15, cy - r * 0.5);
+      ctx.lineTo(cx + i * r * 0.3 + r * 0.15, cy - r * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = '#ff9900'; ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawBat(cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#442266';
+  // wings
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx - r * 2, cy - r * 0.5);
+  ctx.lineTo(cx - r * 1.5, cy + r * 0.3);
+  ctx.lineTo(cx - r * 0.8, cy + r * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + r * 2, cy - r * 0.5);
+  ctx.lineTo(cx + r * 1.5, cy + r * 0.3);
+  ctx.lineTo(cx + r * 0.8, cy + r * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  // body
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#6633aa'; ctx.fill();
+  ctx.strokeStyle = '#aa77ff'; ctx.lineWidth = 1; ctx.stroke();
+  // eyes
+  ctx.fillStyle = '#ff4444';
+  ctx.beginPath(); ctx.arc(cx - r * 0.35, cy - r * 0.1, r * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.35, cy - r * 0.1, r * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawGolem(cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#888';
+  // octagon body
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 8;
+    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+  }
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let p of pts) ctx.lineTo(p[0], p[1]);
+  ctx.closePath();
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, '#aaa'); g.addColorStop(1, '#555');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.stroke();
+  // cracks
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - r * 0.3, cy - r * 0.5); ctx.lineTo(cx + r * 0.1, cy + r * 0.2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.3, cy - r * 0.3); ctx.lineTo(cx - r * 0.1, cy + r * 0.4); ctx.stroke();
+  // eyes
+  ctx.fillStyle = '#ff6600';
+  ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.1, r * 0.18, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.3, cy - r * 0.1, r * 0.18, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDragon(cx, cy, r) {
+  ctx.save();
+  // wings
+  ctx.fillStyle = 'rgba(180,0,0,0.7)';
+  // left wing
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.5, cy);
+  ctx.bezierCurveTo(cx - r * 2.5, cy - r * 1.5, cx - r * 3, cy + r, cx - r * 1.5, cy + r * 0.5);
+  ctx.closePath(); ctx.fill();
+  // right wing
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.5, cy);
+  ctx.bezierCurveTo(cx + r * 2.5, cy - r * 1.5, cx + r * 3, cy + r, cx + r * 1.5, cy + r * 0.5);
+  ctx.closePath(); ctx.fill();
+  // body
+  const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.2);
+  bg.addColorStop(0, '#cc3300'); bg.addColorStop(1, '#660000');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(cx, cy, r * 1.3, r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ff4400'; ctx.lineWidth = 1.5; ctx.stroke();
+  // tail
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 1.2, cy + r * 0.2);
+  ctx.bezierCurveTo(cx + r * 2, cy + r * 0.5, cx + r * 2.5, cy - r * 0.3, cx + r * 2.8, cy - r * 0.8);
+  ctx.strokeStyle = '#cc3300'; ctx.lineWidth = r * 0.4; ctx.stroke();
+  // head
+  ctx.beginPath(); ctx.ellipse(cx - r * 1.1, cy - r * 0.1, r * 0.6, r * 0.45, -0.3, 0, Math.PI * 2);
+  ctx.fillStyle = '#dd2200'; ctx.fill();
+  // mouth
+  ctx.beginPath(); ctx.moveTo(cx - r * 1.6, cy + r * 0.15); ctx.lineTo(cx - r * 1.1, cy + r * 0.15);
+  ctx.strokeStyle = '#ff8800'; ctx.lineWidth = 2; ctx.stroke();
+  // fire breath
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 1.6, cy + r * 0.1);
+  ctx.lineTo(cx - r * 2.4, cy - r * 0.1);
+  ctx.lineTo(cx - r * 2.1, cy + r * 0.3);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,150,0,0.8)'; ctx.fill();
+  // eye
+  ctx.fillStyle = '#ffff00';
+  ctx.beginPath(); ctx.arc(cx - r * 1.25, cy - r * 0.1, r * 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawSoldier(cx, cy, r, type) {
+  ctx.save();
+  const colors = { arrow: '#5588cc', spear: '#cc8844', fire: '#cc4400', water: '#4488cc', poison: '#44aa44' };
+  const c = colors[type] || '#5588cc';
+  // body
+  ctx.fillStyle = c;
+  ctx.fillRect(cx - r * 0.6, cy - r * 0.3, r * 1.2, r * 1.1);
+  // helmet
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.35, r * 0.55, Math.PI, 0, false);
+  ctx.fillStyle = darkenColor(c, 0.7); ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.stroke();
+  // face
+  ctx.fillStyle = '#ffcc99';
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 0.3, 0, Math.PI * 2); ctx.fill();
+  // weapon
+  if (type === 'arrow') {
+    // bow
+    ctx.strokeStyle = '#884400'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx + r * 0.9, cy, r * 0.7, -0.8, 0.8); ctx.stroke();
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(cx + r * 0.65, cy - r * 0.63); ctx.lineTo(cx + r * 0.65, cy + r * 0.63); ctx.stroke();
+    // quiver
+    ctx.fillStyle = '#884400';
+    ctx.fillRect(cx - r * 1.1, cy - r * 0.3, r * 0.25, r * 0.7);
+  } else if (type === 'spear') {
+    ctx.strokeStyle = '#884400'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.5); ctx.lineTo(cx, cy + r * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.5); ctx.lineTo(cx - r * 0.2, cy - r * 0.1); ctx.lineTo(cx + r * 0.2, cy - r * 0.1); ctx.closePath();
+    ctx.fillStyle = '#ccc'; ctx.fill();
+  } else if (type === 'fire') {
+    // fire wand
+    ctx.strokeStyle = '#882200'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx + r * 0.5, cy); ctx.lineTo(cx + r * 1.3, cy - r * 0.7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + r * 1.4, cy - r * 0.8, r * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff6600'; ctx.fill();
+  } else if (type === 'water') {
+    ctx.strokeStyle = '#224488'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx + r * 0.5, cy); ctx.lineTo(cx + r * 1.3, cy - r * 0.7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + r * 1.4, cy - r * 0.8, r * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = '#44aaff'; ctx.fill();
+  } else if (type === 'poison') {
+    ctx.strokeStyle = '#224422'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx + r * 0.5, cy); ctx.lineTo(cx + r * 1.3, cy - r * 0.7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + r * 1.4, cy - r * 0.8, r * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = '#88ff44'; ctx.fill();
+    // particles
+    for (let i = 0; i < 4; i++) {
+      const pa = (i / 4) * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(pa) * r * 0.9, cy + Math.sin(pa) * r * 0.5, r * 0.12, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100,255,50,0.7)'; ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawCastle(cx, cy, r, hp, maxHp) {
+  ctx.save();
+  const alive = hp > 0;
+  const baseColor = alive ? '#886644' : '#554433';
+  const roofColor = alive ? '#665533' : '#443322';
+  // main body
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(cx - r, cy - r * 0.5, r * 2, r * 1.3);
+  // battlements / towers
+  const towers = [{ x: cx - r * 0.7 }, { x: cx }, { x: cx + r * 0.7 }];
+  for (const t of towers) {
+    ctx.fillStyle = roofColor;
+    ctx.fillRect(t.x - r * 0.2, cy - r * 1.3, r * 0.4, r * 0.9);
+    ctx.beginPath();
+    ctx.moveTo(t.x, cy - r * 1.6);
+    ctx.lineTo(t.x - r * 0.2, cy - r * 1.3);
+    ctx.lineTo(t.x + r * 0.2, cy - r * 1.3);
+    ctx.closePath(); ctx.fillStyle = '#aa7755'; ctx.fill();
+  }
+  // gate arch
+  ctx.fillStyle = '#221100';
+  ctx.beginPath();
+  ctx.arc(cx, cy + r * 0.3, r * 0.25, Math.PI, 0, false);
+  ctx.lineTo(cx + r * 0.25, cy + r * 0.8);
+  ctx.lineTo(cx - r * 0.25, cy + r * 0.8);
+  ctx.closePath(); ctx.fill();
+  // windows
+  ctx.fillStyle = '#ffee88';
+  ctx.beginPath(); ctx.arc(cx - r * 0.5, cy - r * 0.1, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + r * 0.5, cy - r * 0.1, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  // outline
+  ctx.strokeStyle = '#443322'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(cx - r, cy - r * 0.5, r * 2, r * 1.3);
+  // hp bar
+  if (alive) {
+    const bw = r * 2.2;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(cx - bw / 2, cy - r * 1.9, bw, 7);
+    ctx.fillStyle = hp / maxHp > 0.5 ? '#44ff44' : hp / maxHp > 0.25 ? '#ffaa00' : '#ff4444';
+    ctx.fillRect(cx - bw / 2, cy - r * 1.9, bw * (hp / maxHp), 7);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 0.5;
+    ctx.strokeRect(cx - bw / 2, cy - r * 1.9, bw, 7);
+  }
+  if (!alive) {
+    ctx.fillStyle = 'rgba(255,100,0,0.4)';
+    ctx.fillRect(cx - r, cy - r * 0.5, r * 2, r * 1.3);
+    ctx.fillStyle = '#ff6600'; ctx.font = `${r * 0.4}px serif`;
+    ctx.textAlign = 'center'; ctx.fillText('💀', cx, cy + r * 0.3);
+  }
+  ctx.restore();
+}
+
+function drawWall(cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#8899aa';
+  ctx.fillRect(cx - r, cy - r * 0.5, r * 2, r);
+  ctx.strokeStyle = '#445566'; ctx.lineWidth = 1;
+  ctx.strokeRect(cx - r, cy - r * 0.5, r * 2, r);
+  // hatch pattern
+  ctx.strokeStyle = '#6677887';
+  ctx.lineWidth = 0.5;
+  for (let i = -r; i <= r; i += r * 0.3) {
+    ctx.beginPath(); ctx.moveTo(cx + i, cy - r * 0.5); ctx.lineTo(cx + i + r * 0.3, cy + r * 0.5); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBombTower(cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#556677';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#334455'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.stroke();
+  // fuse
+  ctx.strokeStyle = '#ff8800'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.3, cy - r * 0.6); ctx.quadraticCurveTo(cx + r * 0.5, cy - r, cx + r * 0.3, cy - r * 1.1); ctx.stroke();
+  ctx.restore();
+}
+
+function drawArrowTower(cx, cy, r) {
+  ctx.save();
+  // fan/sector base
+  ctx.fillStyle = '#886644';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + r * 0.5);
+  ctx.arc(cx, cy, r, -Math.PI * 0.8, -Math.PI * 0.2, false);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#554422'; ctx.lineWidth = 1.5; ctx.stroke();
+  // 3 arrows
+  const angles = [-Math.PI * 0.5, -Math.PI * 0.65, -Math.PI * 0.35];
+  for (const a of angles) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+    ctx.strokeStyle = '#884400'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -r * 1.3); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 1.3); ctx.lineTo(-r * 0.12, -r * 1.0); ctx.lineTo(r * 0.12, -r * 1.0); ctx.closePath();
+    ctx.fillStyle = '#aaaaaa'; ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawBarracks(cx, cy, r) {
+  ctx.save();
+  // mini castle
+  ctx.fillStyle = '#667788';
+  ctx.fillRect(cx - r * 0.7, cy - r * 0.3, r * 1.4, r * 0.9);
+  ctx.fillStyle = '#556677';
+  ctx.fillRect(cx - r * 0.5, cy - r * 0.8, r * 0.4, r * 0.6);
+  ctx.fillRect(cx + r * 0.1, cy - r * 0.8, r * 0.4, r * 0.6);
+  ctx.beginPath(); ctx.moveTo(cx - r * 0.3, cy - r * 1.1); ctx.lineTo(cx - r * 0.5, cy - r * 0.8); ctx.lineTo(cx - r * 0.1, cy - r * 0.8); ctx.closePath(); ctx.fillStyle = '#889900'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.3, cy - r * 1.1); ctx.lineTo(cx + r * 0.1, cy - r * 0.8); ctx.lineTo(cx + r * 0.5, cy - r * 0.8); ctx.closePath(); ctx.fill();
+  // mini soldier icon
+  ctx.fillStyle = '#5588cc';
+  ctx.beginPath(); ctx.arc(cx + r * 1.1, cy - r * 0.1, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(cx + r * 0.9, cy + r * 0.1, r * 0.4, r * 0.5);
+  ctx.restore();
+}
+
+function drawPlayer(cx, cy, r) {
+  ctx.save();
+  // cloak
+  ctx.fillStyle = '#3355aa';
+  ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.5, r * 0.7, r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+  // body
+  ctx.fillStyle = '#4466cc';
+  ctx.fillRect(cx - r * 0.45, cy - r * 0.2, r * 0.9, r * 0.85);
+  // helmet
+  ctx.fillStyle = '#aabbdd';
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.25, r * 0.5, Math.PI, 0, false); ctx.fill();
+  ctx.fillRect(cx - r * 0.5, cy - r * 0.28, r, r * 0.15);
+  // face
+  ctx.fillStyle = '#ffcc99';
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.28, 0, Math.PI * 2); ctx.fill();
+  // sword
+  ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.7, cy - r * 0.6); ctx.lineTo(cx + r * 0.7, cy + r * 0.8); ctx.stroke();
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx + r * 0.4, cy - r * 0.1); ctx.lineTo(cx + r, cy - r * 0.1); ctx.stroke();
+  // shield
+  ctx.fillStyle = '#cc4422';
+  ctx.beginPath(); ctx.moveTo(cx - r * 0.9, cy - r * 0.3); ctx.lineTo(cx - r * 0.6, cy - r * 0.6); ctx.lineTo(cx - r * 0.3, cy - r * 0.3); ctx.lineTo(cx - r * 0.6, cy + r * 0.4); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#882200'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+}
+
+function drawHpBar(cx, cy, w, hp, maxHp) {
+  ctx.fillStyle = '#333';
+  ctx.fillRect(cx - w / 2, cy, w, 5);
+  const ratio = Math.max(0, hp / maxHp);
+  ctx.fillStyle = ratio > 0.5 ? '#44ff44' : ratio > 0.25 ? '#ffaa00' : '#ff4444';
+  ctx.fillRect(cx - w / 2, cy, w * ratio, 5);
+  ctx.strokeStyle = '#666'; ctx.lineWidth = 0.5;
+  ctx.strokeRect(cx - w / 2, cy, w, 5);
+}
+
+function darkenColor(hex, factor) {
+  // simple approach: return same string (used for fallback)
+  return hex;
+}
+
+// ========== GAME STATE ==========
+const game = (() => {
+  const CASTLE_X = WORLD / 2, CASTLE_Y = WORLD / 2;
+  const state = {
+    player: { x: CASTLE_X, y: CASTLE_Y - 100, hp: 100, maxHp: 100, speed: 2, atkInterval: 1000, atkLv: 1, atkDmg: 2, atkTimer: 0, keys: {}, mx: CASTLE_X, my: CASTLE_Y - 100 },
+    castle: { x: CASTLE_X, y: CASTLE_Y, hp: 500, maxHp: 500, r: 40, alive: true },
+    camera: { x: CASTLE_X - VIEW / 2, y: CASTLE_Y - VIEW / 2 },
+    coins: 0,
+    soldiers: [],  // {x,y,hp,maxHp,type,target,mode:'follow'|'castle',atkTimer,id}
+    buildings: [], // {x,y,type,hp,maxHp,r,atkTimer,id}
+    monsters: [],  // {x,y,hp,maxHp,type,speed,atk,reward,flying,id}
+    projectiles: [], // {x,y,vx,vy,dmg,owner,flying}
+    particles: [],
+    time: 0,
+    startTime: Date.now(),
+    waveLevel: 0,
+    spawnList: ['slime'],
+    spawnTimer: 0,
+    spawnInterval: 180,
+    gameOver: false,
+    hireMenuMode: null,
+    idCounter: 0,
+    finalEvolution: false,
+  };
+
+  function nextId() { return ++state.idCounter; }
+
+  const SOLDIER_TYPES = [
+    { type: 'arrow', name: '화살 병사', cost: 3, hp: 60, atk: 5, speed: 1.5, range: 150, flying: true },
+    { type: 'spear', name: '창 병사', cost: 5, hp: 80, atk: 7, speed: 1.5, range: 80, flying: false },
+    { type: 'fire',  name: '불 병사',  cost: 10, hp: 50, atk: 9, speed: 1.5, range: 120, flying: false },
+    { type: 'water', name: '물 병사',  cost: 12, hp: 50, atk: 6, speed: 1.5, range: 120, flying: false },
+    { type: 'poison',name: '독 병사',  cost: 15, hp: 55, atk: 8, speed: 1.5, range: 130, flying: false },
+  ];
+
+  const MONSTER_DEFS = {
+    slime:      { name: '슬라임', hp: 30,  atk: 3,  speed: 0.7, reward: 2,  r: 14, flying: false, color: '#44cc44' },
+    swordslime: { name: '검 슬라임', hp: 55,  atk: 6,  speed: 0.6, reward: 4,  r: 16, flying: false, color: '#7799aa' },
+    fireslime:  { name: '불 슬라임', hp: 45,  atk: 8,  speed: 0.8, reward: 5,  r: 15, flying: false, color: '#ff4400' },
+    bat:        { name: '박쥐', hp: 35,  atk: 4,  speed: 1.5, reward: 5,  r: 12, flying: true,  color: '#6633aa' },
+    golem:      { name: '골렘', hp: 200, atk: 15, speed: 0.4, reward: 15, r: 22, flying: false, color: '#888' },
+    dragon:     { name: '드래곤', hp: 500, atk: 30, speed: 0.9, reward: 50, r: 30, flying: true,  color: '#cc2200' },
+  };
+
+  function spawnMonster(type) {
+    const def = MONSTER_DEFS[type];
+    if (!def) return;
+    const side = Math.floor(Math.random() * 4);
+    let sx, sy;
+    const margin = 100;
+    if (side === 0) { sx = Math.random() * WORLD; sy = -margin; }
+    else if (side === 1) { sx = WORLD + margin; sy = Math.random() * WORLD; }
+    else if (side === 2) { sx = Math.random() * WORLD; sy = WORLD + margin; }
+    else { sx = -margin; sy = Math.random() * WORLD; }
+    let mul = state.finalEvolution ? 2 : 1;
+    state.monsters.push({
+      x: sx, y: sy,
+      hp: def.hp * mul, maxHp: def.hp * mul,
+      atk: def.atk * mul, speed: def.speed,
+      reward: def.reward, r: def.r * (state.finalEvolution ? 1.5 : 1),
+      flying: def.flying, type, color: def.color,
+      atkTimer: 0, id: nextId(), scale: state.finalEvolution ? 2 : 1,
+    });
+  }
+
+  function dist(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function addCoins(n) {
+    state.coins += n;
+    updateUI();
+  }
+
+  function updateUI() {
+    const p = state.player;
+    document.getElementById('hpText').textContent = `HP: ${Math.ceil(p.hp)}/${p.maxHp}`;
+    document.getElementById('hpFill').style.width = `${(p.hp / p.maxHp) * 100}%`;
+    document.getElementById('coinText').textContent = `🪙 ${state.coins}`;
+    document.getElementById('atkLvText').textContent = `ATK Lv.${p.atkLv}`;
+  }
+
+  function addMsg(msg, color = '#ffdd88') {
+    const log = document.getElementById('messageLog');
+    const el = document.createElement('div');
+    el.className = 'msgLine';
+    el.style.color = color;
+    el.textContent = msg;
+    log.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 1000); }, 2000);
+    while (log.children.length > 4) log.removeChild(log.firstChild);
+  }
+
+  function showWaveInfo(text) {
+    const el = document.getElementById('waveInfo');
+    el.textContent = text;
+    el.style.display = 'block';
+    el.style.opacity = '1';
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.style.display = 'none', 800); }, 2000);
+  }
+
+  // ===== PUBLIC METHODS =====
+  function buyAttackSpeed() {
+    const p = state.player;
+    if (p.atkLv >= 5) { addMsg('최대 레벨입니다!'); return; }
+    if (state.coins < 10) { addMsg('코인 부족!', '#ff6666'); return; }
+    state.coins -= 10;
+    p.atkLv++;
+    p.atkInterval -= 100;
+    addMsg(`⚡ 공격 속도 Lv.${p.atkLv}! (${p.atkInterval}ms)`, '#aaff66');
+    updateUI();
+  }
+
+  function openHireMenu(mode) {
+    state.hireMenuMode = mode;
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'block';
+    menu.style.left = '50%';
+    menu.style.top = '40%';
+    menu.style.transform = 'translate(-50%,-50%)';
+    const maxCount = mode === 'follow' ? 10 : 20;
+    const current = state.soldiers.filter(s => s.mode === mode).length;
+    const ctx1 = document.getElementById('ctx1');
+    const ctx2 = document.getElementById('ctx2');
+    const ctx3 = document.getElementById('ctx3');
+    ctx1.textContent = `화살 병사 고용 (3🪙) [${current}/${maxCount}]`;
+    ctx1.onclick = () => hireSoldier('arrow', mode);
+    ctx2.textContent = `창 병사 고용 (5🪙) [${current}/${maxCount}]`;
+    ctx2.onclick = () => hireSoldier('spear', mode);
+    ctx3.style.display = 'block';
+    ctx3.textContent = `불 병사 고용 (10🪙) [${current}/${maxCount}]`;
+    ctx3.onclick = () => hireSoldier('fire', mode);
+    document.getElementById('ctx2').onclick = () => hireSoldier('spear', mode);
+  }
+
+  function hireSoldier(type, mode) {
+    const def = SOLDIER_TYPES.find(s => s.type === type);
+    if (!def) return;
+    const maxCount = mode === 'follow' ? 10 : 20;
+    const current = state.soldiers.filter(s => s.mode === mode).length;
+    if (current >= maxCount) { addMsg(`최대 인원 초과! (${maxCount}명)`); return; }
+    if (state.coins < def.cost) { addMsg('코인 부족!', '#ff6666'); return; }
+    state.coins -= def.cost;
+    const angle = Math.random() * Math.PI * 2;
+    const spawnX = mode === 'follow' ? state.player.x + Math.cos(angle) * 30 : state.castle.x + Math.cos(angle) * 60;
+    const spawnY = mode === 'follow' ? state.player.y + Math.sin(angle) * 30 : state.castle.y + Math.sin(angle) * 60;
+    state.soldiers.push({
+      x: spawnX, y: spawnY,
+      hp: def.hp, maxHp: def.hp,
+      type: def.type, atk: def.atk, speed: def.speed, range: def.range, flying: def.flying,
+      mode, atkTimer: 0, id: nextId(),
+    });
+    addMsg(`${def.name} 고용!`, '#aaffaa');
+    updateUI();
+    document.getElementById('contextMenu').style.display = 'none';
+  }
+
+  function buyBuilding(type) {
+    if (!state.castle.alive) { addMsg('성이 파괴됨!', '#ff6666'); return; }
+    const costs = { wall: 15, bombtower: 30, arrowtower: 25, barracks: 40 };
+    const cost = costs[type];
+    if (!cost) return;
+    if (state.coins < cost) { addMsg('코인 부족!', '#ff6666'); return; }
+    state.coins -= cost;
+    const angle = Math.random() * Math.PI * 2;
+    const rd = 60 + Math.random() * 60;
+    const hpMap = { wall: 150, bombtower: 200, arrowtower: 180, barracks: 120 };
+    state.buildings.push({
+      x: state.castle.x + Math.cos(angle) * rd,
+      y: state.castle.y + Math.sin(angle) * rd,
+      type, hp: hpMap[type], maxHp: hpMap[type],
+      r: type === 'wall' ? 18 : 20, atkTimer: 0, id: nextId(),
+    });
+    addMsg(`${type} 건설!`, '#aaaaff');
+    updateUI();
+  }
+
+  function rebuildCastle() {
+    if (state.castle.alive) { addMsg('성이 멀쩡합니다!'); return; }
+    if (state.coins < 50) { addMsg('코인 부족! (50🪙 필요)', '#ff6666'); return; }
+    state.coins -= 50;
+    state.castle.hp = state.castle.maxHp;
+    state.castle.alive = true;
+    addMsg('🏰 성 재건 완료!', '#ffcc44');
+    updateUI();
+  }
+
+  // ===== UPDATE =====
+  function update(dt) {
+    if (state.gameOver) return;
+    state.time += dt;
+    const elapsed = (Date.now() - state.startTime) / 1000;
+
+    // Final evolution at 12 min
+    if (elapsed >= 720 && !state.finalEvolution) {
+      state.finalEvolution = true;
+      showWaveInfo('⚠️ FINAL EVOLUTION! 모든 몬스터 강화!');
+      state.spawnInterval = 60;
+    }
+
+    // Wave progression
+    const waveTime = Math.floor(elapsed / 120);
+    if (waveTime > state.waveLevel) {
+      state.waveLevel = waveTime;
+      const waveTypes = ['slime', 'swordslime', 'fireslime', 'bat', 'golem', 'dragon'];
+      const newType = waveTypes[Math.min(waveTime, waveTypes.length - 1)];
+      if (!state.spawnList.includes(newType)) {
+        state.spawnList.push(newType);
+        showWaveInfo(`🌊 웨이브 ${waveTime}: ${MONSTER_DEFS[newType].name} 출현!`);
+      }
+    }
+
+    // Spawn
+    state.spawnTimer += dt;
+    if (state.spawnTimer >= state.spawnInterval) {
+      state.spawnTimer = 0;
+      const count = state.finalEvolution ? 3 : 1;
+      for (let i = 0; i < count; i++) {
+        const type = state.spawnList[Math.floor(Math.random() * state.spawnList.length)];
+        spawnMonster(type);
+      }
+    }
+
+    // Player movement (WASD / arrow + joystick)
+    const p = state.player;
+    let dx = 0, dy = 0;
+    if (p.keys['w'] || p.keys['arrowup'])    dy -= p.speed;
+    if (p.keys['s'] || p.keys['arrowdown'])  dy += p.speed;
+    if (p.keys['a'] || p.keys['arrowleft'])  dx -= p.speed;
+    if (p.keys['d'] || p.keys['arrowright']) dx += p.speed;
+    // joystick override (only when active)
+    if (joyActive || joyDx !== 0 || joyDy !== 0) {
+      dx += joyDx * p.speed;
+      dy += joyDy * p.speed;
+    }
+    p.x = Math.max(10, Math.min(WORLD - 10, p.x + dx));
+    p.y = Math.max(10, Math.min(WORLD - 10, p.y + dy));
+
+    // Castle heal range
+    if (state.castle.alive) {
+      const dCastle = dist(p, state.castle);
+      if (dCastle < 120) {
+        p.hp = Math.min(p.maxHp, p.hp + 5 * (dt / 60));
+      }
+    }
+
+    // Camera lerp
+    const targetCX = p.x - VIEW / 2;
+    const targetCY = p.y - VIEW / 2;
+    state.camera.x += (targetCX - state.camera.x) * 0.1;
+    state.camera.y += (targetCY - state.camera.y) * 0.1;
+    state.camera.x = Math.max(0, Math.min(WORLD - VIEW, state.camera.x));
+    state.camera.y = Math.max(0, Math.min(WORLD - VIEW, state.camera.y));
+
+    // Player attack
+    p.atkTimer += dt;
+    if (p.atkTimer >= p.atkInterval / 16.67) {
+      p.atkTimer = 0;
+      // find nearest ground monster
+      let nearest = null, nearDist = 200;
+      for (const m of state.monsters) {
+        if (m.flying) continue;
+        const d = dist(p, m);
+        if (d < nearDist) { nearDist = d; nearest = m; }
+      }
+      if (nearest) {
+        const vx = (nearest.x - p.x) / nearDist * 6;
+        const vy = (nearest.y - p.y) / nearDist * 6;
+        state.projectiles.push({ x: p.x, y: p.y, vx, vy, dmg: p.atkDmg, owner: 'player', flying: false, id: nextId() });
+      }
+    }
+
+    // Soldiers update
+    for (let i = state.soldiers.length - 1; i >= 0; i--) {
+      const s = state.soldiers[i];
+      if (s.hp <= 0) { state.soldiers.splice(i, 1); continue; }
+      // movement
+      if (s.mode === 'follow') {
+        const angle2 = (i / (state.soldiers.filter(x => x.mode === 'follow').length || 1)) * Math.PI * 2;
+        const tx = p.x + Math.cos(angle2) * 35;
+        const ty = p.y + Math.sin(angle2) * 35;
+        const dd = dist(s, { x: tx, y: ty });
+        if (dd > 5) {
+          s.x += (tx - s.x) / dd * s.speed;
+          s.y += (ty - s.y) / dd * s.speed;
+        }
+      } else {
+        if (state.castle.alive) {
+          const followSoldiers = state.soldiers.filter(x => x.mode === 'castle');
+          const angle2 = (followSoldiers.indexOf(s) / (followSoldiers.length || 1)) * Math.PI * 2;
+          const tx = state.castle.x + Math.cos(angle2) * 55;
+          const ty = state.castle.y + Math.sin(angle2) * 55;
+          const dd = dist(s, { x: tx, y: ty });
+          if (dd > 5) {
+            s.x += (tx - s.x) / dd * s.speed;
+            s.y += (ty - s.y) / dd * s.speed;
+          }
+        }
+      }
+      // attack
+      s.atkTimer += dt;
+      if (s.atkTimer >= 60) {
+        s.atkTimer = 0;
+        let nearest = null, nearDist = s.range;
+        for (const m of state.monsters) {
+          if (m.flying && !s.flying) continue;
+          const d = dist(s, m);
+          if (d < nearDist) { nearDist = d; nearest = m; }
+        }
+        if (nearest) {
+          const vx = (nearest.x - s.x) / nearDist * 5;
+          const vy = (nearest.y - s.y) / nearDist * 5;
+          state.projectiles.push({ x: s.x, y: s.y, vx, vy, dmg: s.atk, owner: 'soldier', flying: s.flying, id: nextId() });
+        }
+      }
+    }
+
+    // Buildings attack
+    for (let i = state.buildings.length - 1; i >= 0; i--) {
+      const b = state.buildings[i];
+      if (b.hp <= 0) { state.buildings.splice(i, 1); continue; }
+      if (b.type === 'wall') continue;
+      b.atkTimer += dt;
+      const interval = b.type === 'bombtower' ? 180 : b.type === 'arrowtower' ? 90 : 120;
+      if (b.atkTimer >= interval) {
+        b.atkTimer = 0;
+        const canHitFlying = b.type === 'arrowtower' || b.type === 'barracks';
+        let tgts = state.monsters.filter(m => (!m.flying || canHitFlying) && dist(b, m) < 160);
+        if (b.type === 'arrowtower') {
+          tgts.sort((a, c) => dist(b, a) - dist(b, c));
+          for (let t = 0; t < Math.min(3, tgts.length); t++) {
+            const m = tgts[t];
+            const d = dist(b, m);
+            state.projectiles.push({ x: b.x, y: b.y, vx: (m.x - b.x) / d * 7, vy: (m.y - b.y) / d * 7, dmg: 8, owner: 'building', flying: true, id: nextId() });
+          }
+        } else if (b.type === 'bombtower' && tgts.length > 0) {
+          const m = tgts.sort((a, c) => dist(b, a) - dist(b, c))[0];
+          const d = dist(b, m);
+          state.projectiles.push({ x: b.x, y: b.y, vx: (m.x - b.x) / d * 4, vy: (m.y - b.y) / d * 4, dmg: 25, owner: 'building', flying: false, id: nextId(), aoe: 40 });
+        }
+      }
+    }
+
+    // Monsters update
+    for (let i = state.monsters.length - 1; i >= 0; i--) {
+      const m = state.monsters[i];
+      if (m.hp <= 0) {
+        addCoins(m.reward);
+        spawnParticles(m.x, m.y, '#ffdd44');
+        state.monsters.splice(i, 1);
+        continue;
+      }
+      // target: castle first, then player
+      let tx = state.castle.alive ? state.castle.x : p.x;
+      let ty = state.castle.alive ? state.castle.y : p.y;
+      // check if player closer
+      const dp = dist(m, p);
+      const dc = state.castle.alive ? dist(m, state.castle) : 9999;
+      if (dp < dc) { tx = p.x; ty = p.y; }
+      const dd = dist(m, { x: tx, y: ty });
+      if (dd > m.r + 5) {
+        m.x += (tx - m.x) / dd * m.speed;
+        m.y += (ty - m.y) / dd * m.speed;
+      }
+      // attack
+      m.atkTimer += dt;
+      if (m.atkTimer >= 90) {
+        m.atkTimer = 0;
+        if (dist(m, p) < m.r + 20) {
+          p.hp -= m.atk;
+          if (p.hp <= 0) { p.hp = 0; endGame(); }
+        }
+        if (state.castle.alive && dist(m, state.castle) < m.r + state.castle.r) {
+          state.castle.hp -= m.atk;
+          if (state.castle.hp <= 0) destroyCastle();
+        }
+        // hit buildings
+        for (const b of state.buildings) {
+          if (dist(m, b) < m.r + b.r) {
+            b.hp -= m.atk * 0.5;
+          }
+        }
+      }
+    }
+
+    // Projectiles
+    for (let i = state.projectiles.length - 1; i >= 0; i--) {
+      const proj = state.projectiles[i];
+      proj.x += proj.vx;
+      proj.y += proj.vy;
+      if (proj.x < 0 || proj.x > WORLD || proj.y < 0 || proj.y > WORLD) {
+        state.projectiles.splice(i, 1); continue;
+      }
+      let hit = false;
+      for (let j = state.monsters.length - 1; j >= 0; j--) {
+        const m = state.monsters[j];
+        if (m.flying && !proj.flying) continue;
+        if (dist(proj, m) < m.r + 5) {
+          if (proj.aoe) {
+            for (const m2 of state.monsters) {
+              if (dist(proj, m2) < proj.aoe) m2.hp -= proj.dmg;
+            }
+            spawnParticles(proj.x, proj.y, '#ff8800');
+          } else {
+            m.hp -= proj.dmg;
+          }
+          hit = true; break;
+        }
+      }
+      if (hit) { state.projectiles.splice(i, 1); continue; }
+    }
+
+    // Particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pt = state.particles[i];
+      pt.x += pt.vx; pt.y += pt.vy;
+      pt.life -= dt;
+      pt.vy -= 0.02;
+      if (pt.life <= 0) state.particles.splice(i, 1);
+    }
+  }
+
+  function spawnParticles(x, y, color) {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      state.particles.push({ x, y, vx: Math.cos(a) * 1.5, vy: Math.sin(a) * 1.5 - 1, life: 30, maxLife: 30, color });
+    }
+  }
+
+  function destroyCastle() {
+    state.castle.hp = 0;
+    state.castle.alive = false;
+    // destroy all castle-dependent units
+    state.soldiers = state.soldiers.filter(s => s.mode !== 'castle');
+    state.buildings = [];
+    addMsg('🏚️ 성이 파괴되었습니다! 재건하세요.', '#ff4444');
+  }
+
+  function endGame() {
+    state.gameOver = true;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0, 0, VIEW, VIEW);
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 28px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', VIEW / 2, VIEW / 2 - 20);
+    ctx.fillStyle = '#ffcc44';
+    ctx.font = '16px Courier New';
+    ctx.fillText(`수집한 코인: ${state.coins}`, VIEW / 2, VIEW / 2 + 20);
+    ctx.fillText('F5로 재시작', VIEW / 2, VIEW / 2 + 50);
+    ctx.restore();
+  }
+
+  // ===== DRAW =====
+  function draw() {
+    if (state.gameOver) return;
+    const cam = state.camera;
+    ctx.clearRect(0, 0, VIEW, VIEW);
+
+    // Background grid
+    ctx.fillStyle = '#1e3322';
+    ctx.fillRect(0, 0, VIEW, VIEW);
+    ctx.strokeStyle = 'rgba(100,150,100,0.15)';
+    ctx.lineWidth = 1;
+    const gridSize = 100;
+    const startX = -((cam.x % gridSize));
+    const startY = -((cam.y % gridSize));
+    for (let x = startX; x < VIEW; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, VIEW); ctx.stroke();
+    }
+    for (let y = startY; y < VIEW; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VIEW, y); ctx.stroke();
+    }
+
+    function toScreen(wx, wy) {
+      return [wx - cam.x, wy - cam.y];
+    }
+
+    function inView(wx, wy, margin = 60) {
+      const [sx, sy] = toScreen(wx, wy);
+      return sx > -margin && sx < VIEW + margin && sy > -margin && sy < VIEW + margin;
+    }
+
+    // Castle
+    {
+      const [sx, sy] = toScreen(state.castle.x, state.castle.y);
+      if (inView(state.castle.x, state.castle.y, 100)) {
+        drawCastle(sx, sy, state.castle.r, state.castle.hp, state.castle.maxHp);
+        // heal radius
+        if (state.castle.alive) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(100,255,100,0.15)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath(); ctx.arc(sx, sy, 120, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Buildings
+    for (const b of state.buildings) {
+      if (!inView(b.x, b.y)) continue;
+      const [sx, sy] = toScreen(b.x, b.y);
+      if (b.type === 'wall') drawWall(sx, sy, b.r);
+      else if (b.type === 'bombtower') drawBombTower(sx, sy, b.r);
+      else if (b.type === 'arrowtower') drawArrowTower(sx, sy, b.r);
+      else if (b.type === 'barracks') drawBarracks(sx, sy, b.r);
+      drawHpBar(sx, sy + b.r + 2, b.r * 1.5, b.hp, b.maxHp);
+    }
+
+    // Monsters
+    for (const m of state.monsters) {
+      if (!inView(m.x, m.y)) continue;
+      const [sx, sy] = toScreen(m.x, m.y);
+      const r = m.r;
+      if (m.type === 'slime') drawSlime(sx, sy, r, m.color, 'normal');
+      else if (m.type === 'swordslime') drawSlime(sx, sy, r, m.color, 'sword');
+      else if (m.type === 'fireslime') drawSlime(sx, sy, r, m.color, 'fire');
+      else if (m.type === 'bat') drawBat(sx, sy, r);
+      else if (m.type === 'golem') drawGolem(sx, sy, r);
+      else if (m.type === 'dragon') drawDragon(sx, sy, r);
+      drawHpBar(sx, sy - r - 8, r * 1.8, m.hp, m.maxHp);
+      // flying indicator
+      if (m.flying) {
+        ctx.fillStyle = 'rgba(200,200,255,0.5)';
+        ctx.font = '10px serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('✈', sx, sy - r - 14);
+      }
+    }
+
+    // Soldiers
+    for (const s of state.soldiers) {
+      if (!inView(s.x, s.y)) continue;
+      const [sx, sy] = toScreen(s.x, s.y);
+      drawSoldier(sx, sy, 12, s.type);
+      drawHpBar(sx, sy - 18, 20, s.hp, s.maxHp);
+    }
+
+    // Projectiles
+    for (const proj of state.projectiles) {
+      if (!inView(proj.x, proj.y, 10)) continue;
+      const [sx, sy] = toScreen(proj.x, proj.y);
+      ctx.save();
+      ctx.fillStyle = proj.owner === 'player' ? '#88ddff' : proj.aoe ? '#ff8800' : '#ffdd44';
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.beginPath(); ctx.arc(sx, sy, proj.aoe ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Particles
+    for (const pt of state.particles) {
+      if (!inView(pt.x, pt.y, 10)) continue;
+      const [sx, sy] = toScreen(pt.x, pt.y);
+      ctx.save();
+      ctx.globalAlpha = pt.life / pt.maxLife;
+      ctx.fillStyle = pt.color;
+      ctx.beginPath(); ctx.arc(sx, sy, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Player
+    const [psx, psy] = toScreen(state.player.x, state.player.y);
+    drawPlayer(psx, psy, 16);
+    drawHpBar(psx, psy - 28, 28, state.player.hp, state.player.maxHp);
+
+    // Minimap
+    mCtx.fillStyle = '#1a3322';
+    mCtx.fillRect(0, 0, MINI, MINI);
+    // castle on minimap
+    if (state.castle.alive) {
+      mCtx.fillStyle = '#886644';
+      const cx = state.castle.x * SCALE, cy = state.castle.y * SCALE;
+      mCtx.fillRect(cx - 3, cy - 3, 6, 6);
+      mCtx.fillStyle = '#ffcc44';
+      mCtx.font = '7px serif';
+      mCtx.textAlign = 'center';
+      mCtx.fillText('🏠', cx, cy + 2);
+    }
+    // monsters on minimap
+    for (const m of state.monsters) {
+      mCtx.fillStyle = m.flying ? '#aa88ff' : '#ff4444';
+      mCtx.fillRect(m.x * SCALE - 1, m.y * SCALE - 1, 2, 2);
+    }
+    // soldiers on minimap
+    for (const s of state.soldiers) {
+      mCtx.fillStyle = '#44aaff';
+      mCtx.fillRect(s.x * SCALE - 1, s.y * SCALE - 1, 2, 2);
+    }
+    // player on minimap
+    mCtx.fillStyle = '#ffffff';
+    mCtx.beginPath();
+    mCtx.arc(state.player.x * SCALE, state.player.y * SCALE, 2.5, 0, Math.PI * 2);
+    mCtx.fill();
+    // viewport rect on minimap
+    mCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+    mCtx.lineWidth = 0.5;
+    mCtx.strokeRect(cam.x * SCALE, cam.y * SCALE, VIEW * SCALE, VIEW * SCALE);
+  }
+
+  // ===== INPUT =====
+  window.addEventListener('keydown', e => {
+    state.player.keys[e.key.toLowerCase()] = true;
+    if (e.key === 'Escape') document.getElementById('contextMenu').style.display = 'none';
+  });
+  window.addEventListener('keyup', e => { state.player.keys[e.key.toLowerCase()] = false; });
+
+  canvas.addEventListener('click', e => {
+    document.getElementById('contextMenu').style.display = 'none';
+  });
+
+  // Click on castle to show buy menu
+  canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left + state.camera.x;
+    const my = e.clientY - rect.top + state.camera.y;
+    if (dist({ x: mx, y: my }, state.castle) < state.castle.r + 10 && state.castle.alive) {
+      openHireMenu('castle');
+    } else if (dist({ x: mx, y: my }, state.player) < 20) {
+      openHireMenu('follow');
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#contextMenu') && !e.target.closest('#shopPanel')) {
+      document.getElementById('contextMenu').style.display = 'none';
+    }
+  });
+
+  // ===== LOOP =====
+  let last = 0;
+  function loop(ts) {
+    const dt = Math.min((ts - last) / 16.67, 3);
+    last = ts;
+    update(dt);
+    draw();
+    updateUI();
+    requestAnimationFrame(loop);
+  }
+
+  addCoins(20); // starter coins
+  addMsg('🏰 Castle Defense 시작! WASD로 이동', '#88ff88');
+  addMsg('성 근처에 있으면 HP 회복', '#88ffcc');
+
+  requestAnimationFrame(ts => { last = ts; requestAnimationFrame(loop); });
+
+  return { buyAttackSpeed, openHireMenu, hireSoldier, buyBuilding, rebuildCastle };
+})();
+</script>
+</body>
+</html>
