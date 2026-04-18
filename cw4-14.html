@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Castle Wars - 4인 멀티</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a1a; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; width:100vw; overflow:hidden; font-family:'Courier New',monospace; color:#eee; }
+
+/* 로비 */
+#lobby { display:flex; flex-direction:column; align-items:center; gap:16px; padding:20px; }
+#lobby h1 { font-size:28px; color:#ffcc44; text-shadow:0 0 20px #ffaa00; }
+#lobby p { color:#aaa; font-size:13px; text-align:center; }
+.lobbyBtn { background:linear-gradient(135deg,#334,#556); border:1px solid #88aaff; color:#ddeeff; font-size:14px; padding:12px 28px; cursor:pointer; border-radius:8px; font-family:'Courier New',monospace; }
+.lobbyBtn:hover { background:linear-gradient(135deg,#446,#668); }
+#roomInput { background:#223; border:1px solid #556; color:#eee; font-size:16px; padding:10px 16px; border-radius:6px; width:200px; text-align:center; font-family:'Courier New',monospace; }
+#playerList { background:#111; border:1px solid #334; padding:10px; border-radius:6px; width:260px; min-height:80px; }
+.playerItem { padding:4px 8px; font-size:12px; }
+#waitMsg { color:#ffdd88; font-size:12px; text-align:center; }
+
+/* 게임 */
+#gameWrap { display:none; position:relative; width:100vw; height:100vh; max-width:500px; max-height:750px; }
+canvas { display:block; width:100%!important; height:100%!important; border:2px solid #334; }
+
+/* UI */
+#ui-top { position:absolute; top:0; left:0; width:100%; display:flex; justify-content:space-between; pointer-events:none; z-index:10; }
+#ui-bottom { position:absolute; bottom:0; left:0; width:100%; z-index:10; }
+.uiPanel { background:rgba(0,0,0,0.8); border:1px solid #445; padding:5px 8px; border-radius:4px; font-size:10px; }
+#hpBg { width:110px; height:8px; background:#333; border-radius:4px; overflow:hidden; margin-top:2px; }
+#hpFill { height:100%; background:linear-gradient(90deg,#f00,#0f0); border-radius:4px; transition:width 0.2s; }
+#minimap { border:1px solid #556; }
+#shopPanel { display:flex; gap:3px; padding:3px; background:rgba(0,0,0,0.88); border-top:1px solid #445; flex-wrap:wrap; justify-content:center; pointer-events:all; }
+.sBtn { background:rgba(30,30,60,0.9); border:1px solid #556; color:#ccd; font-size:8px; padding:3px 5px; cursor:pointer; border-radius:3px; white-space:nowrap; }
+.sBtn:hover { background:rgba(60,60,100,0.9); }
+#msgLog { position:absolute; bottom:36px; left:0; width:100%; pointer-events:none; z-index:15; }
+.msgLine { color:#ffdd88; font-size:10px; text-align:center; text-shadow:1px 1px 2px #000; }
+#waveInfo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:16px; font-weight:bold; text-shadow:2px 2px 4px #000; pointer-events:none; z-index:20; display:none; text-align:center; }
+#ctxMenu { position:absolute; background:rgba(0,0,0,0.92); border:1px solid #778; padding:4px; display:none; z-index:25; pointer-events:all; border-radius:4px; }
+.cBtn { display:block; width:100%; background:none; border:none; color:#ddd; font-size:11px; padding:4px 10px; cursor:pointer; text-align:left; font-family:'Courier New',monospace; white-space:nowrap; }
+.cBtn:hover { background:rgba(255,255,255,0.1); }
+#joystickZone { position:absolute; bottom:70px; left:10px; width:110px; height:110px; z-index:30; pointer-events:all; touch-action:none; user-select:none; }
+#joystickBase { position:absolute; width:100px; height:100px; border-radius:50%; background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.3); top:5px; left:5px; }
+#joystickKnob { position:absolute; width:42px; height:42px; border-radius:50%; background:radial-gradient(circle at 35% 35%,rgba(255,255,255,0.6),rgba(100,150,255,0.7)); border:2px solid rgba(200,220,255,0.8); top:29px; left:29px; }
+#roomTag { position:absolute; top:2px; left:50%; transform:translateX(-50%); color:#aaa; font-size:9px; pointer-events:none; z-index:10; }
+</style>
+</head>
+<body>
+
+<!-- 로비 -->
+<div id="lobby">
+  <h1><span id="devIcon" style="cursor:pointer;user-select:none;">🏰</span> Castle Wars</h1>
+  <div id="devBadge" style="display:none;background:linear-gradient(135deg,#500,#800);border:1px solid #f44;color:#faa;font-size:11px;padding:4px 12px;border-radius:4px;letter-spacing:1px;">🛠️ DEV MODE</div>
+  <p>방 번호를 입력하고 친구들과 함께 접속하세요!<br>같은 번호로 최대 4명까지 참가 가능</p>
+  <input id="roomInput" type="number" placeholder="방 번호 (예: 1234)" maxlength="6">
+  <button class="lobbyBtn" id="joinBtn">🚪 입장하기</button>
+  <div id="playerList"><div style="color:#666;font-size:11px;text-align:center;padding-top:10px;">방 입장 후 플레이어 목록 표시</div></div>
+  <div id="waitMsg"></div>
+  <button class="lobbyBtn" id="startBtn" style="display:none;background:linear-gradient(135deg,#363,#585)">⚔️ 게임 시작!</button>
+  <div style="display:flex;align-items:center;gap:10px;width:260px;margin-top:4px;">
+    <div style="flex:1;height:1px;background:#334;"></div>
+    <span style="color:#556;font-size:11px;">또는</span>
+    <div style="flex:1;height:1px;background:#334;"></div>
+  </div>
+  <button class="lobbyBtn" id="soloBtn" style="background:linear-gradient(135deg,#443,#665);border-color:#aa8844;color:#ffeeaa;">🧙 1인 플레이</button>
+</div>
+
+<!-- 게임 -->
+<div id="gameWrap">
+  <canvas id="gameCanvas" width="500" height="750"></canvas>
+  <div id="ui-top">
+    <div class="uiPanel" style="display:flex;flex-direction:column;gap:2px;min-width:130px;">
+      <div style="display:flex;justify-content:space-between;">
+        <span id="hpText">HP:100/100</span>
+        <span id="atkLvText" style="color:#ffcc44">Lv.1</span>
+      </div>
+      <div id="hpBg"><div id="hpFill" style="width:100%"></div></div>
+      <div style="font-size:9px;color:#aaa;margin-top:1px">🏰 성 HP</div>
+      <div id="castleHpBg" style="width:110px;height:7px;background:#333;border-radius:4px;overflow:hidden;">
+        <div id="castleHpFill" style="height:100%;background:linear-gradient(90deg,#ff4400,#ffaa00);border-radius:4px;width:100%;transition:width 0.3s;"></div>
+      </div>
+      <div id="castleHpText" style="font-size:9px;color:#ffaa44;">500/500</div>
+      <div id="castleLvText" style="font-size:9px;color:#ffcc44;">🏰 Lv.1</div>
+      <div id="coinText" style="color:#ffd700">🪙 0</div>
+    </div>
+    <div class="uiPanel">
+      <div style="font-size:8px;text-align:center;margin-bottom:1px">MAP</div>
+      <canvas id="minimap" width="70" height="70"></canvas>
+    </div>
+  </div>
+  <div id="ui-bottom">
+    <div id="shopPanel">
+      <button class="sBtn" id="btnAtkSpd">⚡ATK(10🪙)</button>
+      <button class="sBtn" id="btnHireFollow">⚔️동행고용</button>
+      <button class="sBtn" id="btnHireCastle">🏰배치고용</button>
+      <button class="sBtn" id="btnWall">🧱방벽(20)</button>
+      <button class="sBtn" id="btnBomb">💣폭탄(50)</button>
+      <button class="sBtn" id="btnArrow">🏹화살탑(50)</button>
+      <button class="sBtn" id="btnBarracks">🏠병사소(50)</button>
+      <button class="sBtn" id="btnIce">❄️얼음탑(50)</button>
+      <button class="sBtn" id="btnElectric">⚡전기탑(50)</button>
+      <button class="sBtn" id="rotateBtn" style="display:none;background:rgba(80,60,20,0.9);border-color:#aa8844;color:#ffeeaa;">🔄회전</button>
+      <button class="sBtn" id="cancelBtn" style="display:none;background:rgba(80,20,20,0.9);border-color:#aa4444;color:#ffaaaa;">❌취소</button>
+    </div>
+  </div>
+  <div id="ctxMenu">
+    <button class="cBtn" id="c1"></button>
+    <button class="cBtn" id="c2"></button>
+    <button class="cBtn" id="c3" style="display:none"></button>
+  </div>
+  <div id="msgLog"></div>
+  <div id="waveInfo"></div>
+  <div id="joystickZone"><div id="joystickBase"></div><div id="joystickKnob"></div></div>
+  <div id="roomTag"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, onValue, update, remove, onDisconnect, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC8ZOD5Nh-Uq5Nwn8K_ldKFnRFwsT0RE4Y",
+  authDomain: "castle-cb77d.firebaseapp.com",
+  projectId: "castle-cb77d",
+  storageBucket: "castle-cb77d.firebasestorage.app",
+  messagingSenderId: "592533154493",
+  appId: "1:592533154493:web:43878c797a342f6859e5d4",
+  databaseURL: "https://castle-cb77d-default-rtdb.firebaseio.com"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// 버튼 이벤트 연결
+document.getElementById('joinBtn').addEventListener('click', joinRoom);
+document.getElementById('startBtn').addEventListener('click', startGame);
+
+// ====== 상수 ======
+const WORLD = 5000, VW = 500, VH = 750, MINI = 70;
+const SCALE = MINI / WORLD;
+const CASTLE_X = 2500, CASTLE_Y = 2500; // 공유 성 위치 (맵 정중앙)
+// 모든 플레이어 성 주변 같은 위치에서 시작
+const PLAYER_STARTS = [
+  {x:2420, y:2580},
+  {x:2580, y:2580},
+  {x:2420, y:2420},
+  {x:2580, y:2420},
+];
+const PLAYER_COLORS = ['#4488ff','#ff4444','#44cc44','#ffaa00'];
+const PLAYER_NAMES = ['🔵 플레이어1','🔴 플레이어2','🟢 플레이어3','🟡 플레이어4'];
+
+// ====== 전역 상태 ======
+let myId = null, roomId = null, myIdx = -1;
+let roomRef = null, playersRef = null, castleRef = null;
+let remoteStates = {};
+let sharedCastle = { hp: 500, maxHp: 500, alive: true };
+let canvas, ctx, miniCanvas, mCtx;
+let isSolo = false;
+let devMode = false;
+
+// 개발자 모드 - 성 아이콘 클릭
+let devClickCount = 0, devClickTimer = null;
+document.getElementById('devIcon').addEventListener('click', () => {
+  devClickCount++;
+  clearTimeout(devClickTimer);
+  devClickTimer = setTimeout(() => { devClickCount = 0; }, 1500);
+  if (devClickCount >= 5) {
+    devClickCount = 0;
+    devMode = !devMode;
+    const badge = document.getElementById('devBadge');
+    const icon = document.getElementById('devIcon');
+    if (devMode) {
+      badge.style.display = 'block';
+      icon.style.textShadow = '0 0 12px #f44, 0 0 20px #f44';
+      icon.style.filter = 'drop-shadow(0 0 6px #f44)';
+    } else {
+      badge.style.display = 'none';
+      icon.style.textShadow = '';
+      icon.style.filter = '';
+    }
+  }
+});
+
+// ====== 조이스틱 ======
+let joyActive = false, joyDx = 0, joyDy = 0;
+
+// ====== 게임 상태 ======
+let G = null;
+
+// ====== 로비 ======
+async function joinRoom() {
+  const input = document.getElementById('roomInput').value.trim();
+  if (!input) { alert('방 번호를 입력하세요!'); return; }
+  
+  document.getElementById('waitMsg').textContent = '접속 중...';
+  
+  try {
+    roomId = input;
+    myId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
+
+    roomRef = ref(db, `rooms/${roomId}`);
+    playersRef = ref(db, `rooms/${roomId}/players`);
+    castleRef = ref(db, `rooms/${roomId}/castle`);
+
+    // 현재 플레이어 수 확인 + 오래된 데이터 정리
+    const snap = await get(playersRef);
+    let existingPlayers = [];
+    if (snap.exists()) {
+      const players = snap.val();
+      // online 필드가 없거나 오래된 데이터 정리
+      for (const [pid, pdata] of Object.entries(players)) {
+        if (!pdata.name || pdata.name === 'undefined' || !pdata.online) {
+          // 유효하지 않은 데이터 삭제
+          await remove(ref(db, `rooms/${roomId}/players/${pid}`));
+        } else {
+          existingPlayers.push(pid);
+        }
+      }
+    }
+    if (existingPlayers.length >= 4) { alert('방이 꽉 찼어요! (최대 4명)'); return; }
+
+    myIdx = existingPlayers.length;
+
+    // 첫 번째 플레이어가 성 초기화
+    if (existingPlayers.length === 0) {
+      await set(castleRef, { hp: 2000, maxHp: 2000, alive: true });
+    }
+    const start = PLAYER_STARTS[myIdx];
+
+    document.getElementById('waitMsg').textContent = `플레이어 ${myIdx+1}번으로 입장 중...`;
+
+    // 내 정보 등록
+    const myPlayerRef = ref(db, `rooms/${roomId}/players/${myId}`);
+    await set(myPlayerRef, {
+      idx: myIdx, name: PLAYER_NAMES[myIdx],
+      x: start.x, y: start.y,
+      hp: 100, maxHp: 100,
+      coins: 30, atkLv: 1,
+      soldiers: [], buildings: [],
+      online: true
+    });
+    onDisconnect(myPlayerRef).remove();
+
+    document.getElementById('waitMsg').textContent = `✅ ${PLAYER_NAMES[myIdx]}로 입장 완료!`;
+
+    // 플레이어 목록 감시
+    onValue(playersRef, (snap) => {
+      if (!snap.exists()) return;
+      const players = snap.val();
+      const list = document.getElementById('playerList');
+      list.innerHTML = '';
+      Object.values(players).forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'playerItem';
+        div.style.color = PLAYER_COLORS[p.idx];
+        div.textContent = p.name + (p.idx === myIdx ? ' (나)' : '');
+        list.appendChild(div);
+      });
+      const count = Object.keys(players).length;
+      document.getElementById('waitMsg').textContent = `${count}/4명 접속 중... 2명 이상이면 시작 가능!`;
+      if (count >= 2) {
+        document.getElementById('startBtn').style.display = 'block';
+      }
+      Object.entries(players).forEach(([pid, pdata]) => {
+        if (pid !== myId) remoteStates[pid] = pdata;
+      });
+    });
+
+  } catch(err) {
+    document.getElementById('waitMsg').textContent = '❌ 오류: ' + err.message;
+    alert('접속 오류: ' + err.message);
+  }
+}
+
+function startGame() {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('gameWrap').style.display = 'block';
+  document.getElementById('roomTag').textContent = `방: ${roomId}`;
+  if(devMode) document.getElementById('roomTag').textContent += ' 🛠️DEV';
+  initGame();
+
+  // 페이지 닫을 때 내 데이터 삭제
+  window.addEventListener('beforeunload', () => {
+    if (myId && roomId) {
+      // navigator.sendBeacon으로 삭제 요청 (비동기)
+      remove(ref(db, `rooms/${roomId}/players/${myId}`));
+    }
+  });
+};
+
+function startSolo() {
+  isSolo = true;
+  myIdx = 0;
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('gameWrap').style.display = 'block';
+  document.getElementById('roomTag').textContent = devMode ? '🧙 1인 플레이 🛠️DEV' : '🧙 1인 플레이';
+  initGame();
+};
+document.getElementById('soloBtn').addEventListener('click', startSolo);
+
+// ====== 게임 초기화 ======
+function initGame() {
+  canvas = document.getElementById('gameCanvas');
+  ctx = canvas.getContext('2d');
+  miniCanvas = document.getElementById('minimap');
+  mCtx = miniCanvas.getContext('2d');
+
+  const start = PLAYER_STARTS[myIdx];
+
+  // 조이스틱
+  const zone = document.getElementById('joystickZone');
+  const knob = document.getElementById('joystickKnob');
+  const JR = 30, CX = 55, CY = 55;
+  function setKnob(dx, dy) {
+    const len = Math.sqrt(dx*dx+dy*dy);
+    const cx2 = len>JR ? dx/len*JR : dx;
+    const cy2 = len>JR ? dy/len*JR : dy;
+    knob.style.left = (CX-21+cx2)+'px';
+    knob.style.top  = (CY-21+cy2)+'px';
+    joyDx = Math.min(1,Math.max(-1,dx/JR));
+    joyDy = Math.min(1,Math.max(-1,dy/JR));
+  }
+  function joyStart(e){ e.preventDefault(); joyActive=true; const s=e.touches?e.touches[0]:e; const r=zone.getBoundingClientRect(); setKnob(s.clientX-r.left-CX,s.clientY-r.top-CY); }
+  function joyMove(e){ if(!joyActive)return; e.preventDefault(); const s=e.touches?e.touches[0]:e; const r=zone.getBoundingClientRect(); setKnob(s.clientX-r.left-CX,s.clientY-r.top-CY); }
+  function joyEnd(){ joyActive=false; joyDx=0; joyDy=0; knob.style.left=(CX-21)+'px'; knob.style.top=(CY-21)+'px'; }
+  zone.addEventListener('mousedown',joyStart,{passive:false});
+  zone.addEventListener('touchstart',joyStart,{passive:false});
+  window.addEventListener('mousemove',joyMove,{passive:false});
+  window.addEventListener('touchmove',joyMove,{passive:false});
+  window.addEventListener('mouseup',joyEnd);
+  window.addEventListener('touchend',joyEnd);
+
+  // 게임 객체
+  G = createGame(start);
+
+  // 상점 버튼 이벤트
+  document.getElementById('btnAtkSpd').addEventListener('click', ()=>G.buyAtkSpd());
+  document.getElementById('btnHireFollow').addEventListener('click', ()=>G.hire('follow'));
+  document.getElementById('btnHireCastle').addEventListener('click', ()=>G.hire('castle'));
+  document.getElementById('btnWall').addEventListener('click', ()=>G.buyBuilding('wall'));
+  document.getElementById('btnBomb').addEventListener('click', ()=>G.buyBuilding('bomb'));
+  document.getElementById('btnArrow').addEventListener('click', ()=>G.buyBuilding('arrow'));
+  document.getElementById('btnBarracks').addEventListener('click', ()=>G.buyBuilding('barracks'));
+  document.getElementById('btnIce').addEventListener('click', ()=>G.buyBuilding('ice'));
+  document.getElementById('btnElectric').addEventListener('click', ()=>G.buyBuilding('electric'));
+  document.getElementById('rotateBtn').addEventListener('click', ()=>{
+    if(G.getPlacingMode()==='wall'){ G.toggleRotate(); }
+  });
+  document.getElementById('cancelBtn').addEventListener('click', ()=>{ G.cancelPlacing(); });
+
+  // Firebase 동기화 시작 (멀티 전용)
+  if (!isSolo) startSync();
+
+  // 게임 루프
+  let last = 0;
+  function loop(ts) {
+    const dt = Math.min((ts-last)/16.67,3);
+    last = ts;
+    G.update(dt);
+    G.draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(ts => { last=ts; requestAnimationFrame(loop); });
+}
+
+// ====== Firebase 동기화 ======
+let syncTimer = 0;
+function startSync() {
+  // 다른 플레이어 상태 실시간 수신
+  onValue(playersRef, (snap) => {
+    if (!snap.exists()) {
+      remoteStates = {};
+      return;
+    }
+    const current = snap.val();
+    Object.keys(remoteStates).forEach(pid => {
+      if (!current[pid]) delete remoteStates[pid];
+    });
+    Object.entries(current).forEach(([pid, pdata]) => {
+      if (pid !== myId) remoteStates[pid] = pdata;
+    });
+  });
+
+  // 공유 성 상태 실시간 수신
+  onValue(castleRef, (snap) => {
+    if (snap.exists()) {
+      sharedCastle = snap.val();
+      // 게임 내 성 상태 업데이트
+      if (G) {
+        G.state.castle.hp = sharedCastle.hp;
+        G.state.castle.alive = sharedCastle.alive;
+      }
+    }
+  });
+}
+
+function pushMyState() {
+  if (!G || !myId || isSolo) return;
+  const s = G.state;
+  update(ref(db, `rooms/${roomId}/players/${myId}`), {
+    x: Math.round(s.player.x),
+    y: Math.round(s.player.y),
+    hp: Math.round(s.player.hp),
+    coins: s.coins,
+    atkLv: s.player.atkLv,
+    soldiers: s.soldiers.slice(0,20).map(s=>({x:Math.round(s.x),y:Math.round(s.y),type:s.type,hp:s.hp,mode:s.mode})),
+    buildings: s.buildings.slice(0,15).map(b=>({x:Math.round(b.x),y:Math.round(b.y),type:b.type,hp:b.hp})),
+  });
+}
+
+// 성 피해를 Firebase에 전송 (절대값 대신 데미지만 전송)
+function sendCastleDamage(dmg) {
+  if (isSolo) {
+    // 1인 플레이: 로컬에서 직접 처리
+    if (G) {
+      const c = G.state.castle;
+      c.hp = Math.max(0, c.hp - dmg);
+      c.alive = c.hp > 0;
+    }
+    return;
+  }
+  if (!castleRef) return;
+  get(castleRef).then(snap => {
+    if (snap.exists()) {
+      const current = snap.val();
+      const newHp = Math.max(0, (current.hp || 0) - dmg);
+      update(castleRef, { hp: newHp, alive: newHp > 0 });
+    }
+  });
+}
+
+// ====== 게임 로직 ======
+function createGame(start) {
+  let idCnt = 0;
+  const nid = () => ++idCnt;
+
+  const state = {
+    player: { x:start.x, y:start.y, hp:100, maxHp:100, speed:2.5, atkInterval:1000, atkLv:1, atkDmg:20, atkTimer:0, keys:{} },
+    castle: { x:CASTLE_X, y:CASTLE_Y, hp:500, maxHp:500, r:50, alive:true, level:1 },
+    camera: { x:CASTLE_X-VW/2, y:CASTLE_Y-VH/2 },
+    coins: 30,
+    soldiers: [], buildings: [], monsters: [], projectiles: [], particles: [],
+    time: 0, startTime: Date.now(),
+    waveLevel: 0, spawnList:['slime'], spawnTimer:0, spawnInterval:200,
+    finalEvolution: false, gameOver: false,
+    syncTimer: 0,
+  };
+
+  const SDEFS = [
+    {type:'arrow',name:'화살병사',cost:3, hp:30,atk:5,speed:1.5,range:150,flying:true},
+    {type:'spear',name:'창 병사', cost:5, hp:40,atk:7,speed:1.5,range:80, flying:false},
+    {type:'fire', name:'불 병사', cost:10,hp:25,atk:9,speed:1.5,range:120,flying:false},
+  ];
+  const MDEFS = {
+    slime:     {hp:30, atk:6,  speed:0.7,reward:2, r:14,flying:false,color:'#44cc44'},
+    swordslime:{hp:55, atk:12, speed:0.6,reward:4, r:16,flying:false,color:'#7799aa'},
+    fireslime: {hp:45, atk:16, speed:0.8,reward:5, r:15,flying:false,color:'#ff4400'},
+    bat:       {hp:35, atk:8,  speed:1.5,reward:5, r:12,flying:true, color:'#6633aa'},
+    golem:     {hp:200,atk:15,speed:0.4,reward:15,r:22,flying:false,color:'#888'},
+    dragon:    {hp:500,atk:30,speed:0.9,reward:50,r:30,flying:true, color:'#cc2200'},
+  };
+
+  function dist(a,b){ const dx=a.x-b.x,dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
+  function addCoins(n){ state.coins+=n; updateUI(); }
+  function addMsg(msg,color='#ffdd88'){
+    const log=document.getElementById('msgLog');
+    const el=document.createElement('div'); el.className='msgLine'; el.style.color=color; el.textContent=msg;
+    log.appendChild(el); setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),800)},2000);
+    while(log.children.length>4) log.removeChild(log.firstChild);
+  }
+  function updateUI(){
+    const p=state.player;
+    document.getElementById('hpText').textContent=`HP:${Math.ceil(p.hp)}/${p.maxHp}`;
+    document.getElementById('hpFill').style.width=`${(p.hp/p.maxHp)*100}%`;
+    document.getElementById('coinText').textContent=`🪙 ${state.coins}`;
+    document.getElementById('atkLvText').textContent=`Lv.${p.atkLv}`;
+    // 성 HP 업데이트
+    const castleRatio = Math.max(0, state.castle.hp / state.castle.maxHp);
+    document.getElementById('castleHpFill').style.width=`${castleRatio*100}%`;
+    document.getElementById('castleHpText').textContent=`${Math.ceil(state.castle.hp)}/${state.castle.maxHp}`;
+    document.getElementById('castleLvText').textContent=`🏰 Lv.${state.castle.level}`;
+  }
+  function showWave(txt){
+    const el=document.getElementById('waveInfo'); el.innerHTML=txt; el.style.display='block'; el.style.opacity='1';
+    setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.style.display='none',600)},2500);
+  }
+  function spawnMonster(type){
+    const def=MDEFS[type]; if(!def) return;
+    const side=Math.floor(Math.random()*4);
+    let sx,sy; const m=80;
+    if(side===0){sx=Math.random()*WORLD;sy=-m;}
+    else if(side===1){sx=WORLD+m;sy=Math.random()*WORLD;}
+    else if(side===2){sx=Math.random()*WORLD;sy=WORLD+m;}
+    else{sx=-m;sy=Math.random()*WORLD;}
+    const mul=state.finalEvolution?2:1;
+    const elapsed2=(Date.now()-state.startTime)/1000;
+    // 시간이 지날수록 속도 증가 (1분마다 5%, 최대 2배)
+    const speedMul = Math.min(2.0, 1 + elapsed2/60*0.05);
+    state.monsters.push({x:sx,y:sy,hp:def.hp*mul,maxHp:def.hp*mul,atk:def.atk*mul,speed:def.speed*speedMul,reward:def.reward,r:def.r*(state.finalEvolution?1.4:1),flying:def.flying,type,color:def.color,atkTimer:0,id:nid(),frozen:0,shocked:0});
+  }
+  function destroyCastle(){
+    state.castle.hp=0; state.castle.alive=false;
+    update(castleRef,{hp:0,alive:false});
+    state.gameOver=true;
+    addMsg('💀 성이 함락됐습니다! GAME OVER','#ff4444');
+  }
+  function spawnParticles(x,y,color){
+    for(let i=0;i<5;i++){const a=(i/5)*Math.PI*2; state.particles.push({x,y,vx:Math.cos(a)*1.5,vy:Math.sin(a)*1.5-1,life:25,maxLife:25,color});}
+  }
+
+  // 공개 메서드
+  function buyAtkSpd(){
+    if(state.player.atkLv>=5){addMsg('최대 레벨!');return;}
+    if(state.coins<10){addMsg('코인 부족!','#f66');return;}
+    state.coins-=10; state.player.atkLv++; state.player.atkInterval-=100;
+    addMsg(`⚡ ATK Lv.${state.player.atkLv}!`,'#afa'); updateUI();
+  }
+  function hire(mode){
+    document.getElementById('ctxMenu').style.display='block';
+    document.getElementById('ctxMenu').style.left='50%';
+    document.getElementById('ctxMenu').style.top='35%';
+    document.getElementById('ctxMenu').style.transform='translate(-50%,-50%)';
+    const max=mode==='follow'?10:20;
+    const cur=state.soldiers.filter(s=>s.mode===mode).length;
+    ['c1','c2','c3'].forEach((id,i)=>{
+      const btn=document.getElementById(id);
+      const def=SDEFS[i];
+      btn.style.display='block';
+      btn.textContent=`${def.name} (${def.cost}🪙) [${cur}/${max}]`;
+      btn.onclick=()=>hireSoldier(def.type,mode);
+    });
+  }
+  function hireSoldier(type,mode){
+    const def=SDEFS.find(s=>s.type===type);
+    const max=mode==='follow'?10:20;
+    if(state.soldiers.filter(s=>s.mode===mode).length>=max){addMsg(`최대 ${max}명!`);return;}
+    if(state.coins<def.cost){addMsg('코인 부족!','#f66');return;}
+    state.coins-=def.cost;
+    const a=Math.random()*Math.PI*2;
+    const sx=mode==='follow'?state.player.x+Math.cos(a)*30:state.castle.x+Math.cos(a)*60;
+    const sy=mode==='follow'?state.player.y+Math.sin(a)*30:state.castle.y+Math.sin(a)*60;
+    state.soldiers.push({x:sx,y:sy,hp:def.hp,maxHp:def.hp,type:def.type,atk:def.atk,speed:def.speed,range:def.range,flying:def.flying,mode,atkTimer:0,id:nid()});
+    addMsg(`${def.name} 고용!`,'#afa'); updateUI();
+    document.getElementById('ctxMenu').style.display='none';
+  }
+  // ===== 그리드 배치 시스템 =====
+  const CELL = 30; // 1칸 크기
+  // 성 중심 기준 그리드 원점 (성이 4×4 = 240px 차지, 주변 여유 포함)
+  const GRID_COLS = 24, GRID_ROWS = 20;
+  // 그리드 원점: 성 중심에서 왼쪽/위쪽으로 (GRID_COLS/2 * CELL) 만큼
+  function gridOrigin(){ return { ox: state.castle.x - GRID_COLS/2*CELL, oy: state.castle.y - GRID_ROWS/2*CELL }; }
+
+  let placingMode = null; // 배치 중인 건물 타입
+  let placingRotated = false; // 방벽 회전 여부
+  let hoverCell = null; // 마우스 호버 칸 {col, row}
+
+  // 건물 크기 (칸 단위)
+  const BSIZE = {
+    wall:    {w:2, h:1},
+    bomb:    {w:2, h:4},
+    arrow:   {w:2, h:4},
+    barracks:{w:2, h:4},
+    ice:     {w:2, h:4},
+    electric:{w:2, h:4},
+  };
+  function getBuildingSize(type, rotated){
+    const s = BSIZE[type] || {w:2, h:4};
+    if(type==='wall' && rotated) return {w:s.h, h:s.w};
+    return s;
+  }
+
+  // 이미 점유된 칸 체크
+  function getOccupied(){
+    const occ = new Set();
+    // 성 자체: 4×4
+    const {ox,oy} = gridOrigin();
+    const castleCol = Math.round((state.castle.x - CELL*2 - ox)/CELL);
+    const castleRow = Math.round((state.castle.y - CELL*2 - oy)/CELL);
+    for(let dc=0;dc<4;dc++) for(let dr=0;dr<4;dr++) occ.add(`${castleCol+dc},${castleRow+dr}`);
+    // 기존 건물
+    state.buildings.forEach(b=>{
+      const s=getBuildingSize(b.type, b.rotated);
+      const bc=Math.round((b.x - s.w*CELL/2 - ox)/CELL);
+      const br=Math.round((b.y - s.h*CELL/2 - oy)/CELL);
+      for(let dc=0;dc<s.w;dc++) for(let dr=0;dr<s.h;dr++) occ.add(`${bc+dc},${br+dr}`);
+    });
+    return occ;
+  }
+
+  function canPlace(col, row, type, rotated){
+    const {ox,oy}=gridOrigin();
+    const s=getBuildingSize(type,rotated);
+    if(col<0||row<0||col+s.w>GRID_COLS||row+s.h>GRID_ROWS) return false;
+    const occ=getOccupied();
+    for(let dc=0;dc<s.w;dc++) for(let dr=0;dr<s.h;dr++){
+      if(occ.has(`${col+dc},${row+dr}`)) return false;
+    }
+    return true;
+  }
+
+  function buyBuilding(type){
+    if(!state.castle.alive){addMsg('성이 없음!','#f66');return;}
+    const costs={wall:20,bomb:50,arrow:50,barracks:50,ice:50,electric:50};
+    if(state.coins<costs[type]){addMsg('코인 부족!','#f66');return;}
+    // 배치 모드 진입
+    placingMode = type;
+    placingRotated = false;
+    hoverCell = null;
+    addMsg(`📍 배치할 위치를 탭하세요${type==='wall'?' (회전: 🔄버튼)':''}`, '#adf');
+    document.getElementById('rotateBtn').style.display = type==='wall' ? 'block' : 'none';
+    document.getElementById('cancelBtn').style.display = 'block';
+  }
+  function toggleRotate(){ placingRotated=!placingRotated; }
+  function cancelPlacing(){
+    placingMode=null; hoverCell=null; placingRotated=false;
+    document.getElementById('rotateBtn').style.display='none';
+    document.getElementById('cancelBtn').style.display='none';
+    addMsg('배치 취소','#aaa');
+  }
+  function getPlacingMode(){ return placingMode; }
+  function rebuild(){
+    if(state.castle.alive){addMsg('성이 있음!');return;}
+    if(state.coins<100){addMsg('코인 부족!(100필요)','#f66');return;}
+    state.coins-=100;
+    state.castle.hp=state.castle.maxHp;
+    state.castle.alive=true;
+    // Firebase에도 반영
+    update(castleRef,{hp:state.castle.maxHp,alive:true});
+    addMsg('🏰 성 재건!','#ffcc44'); updateUI();
+  }
+
+  const CASTLE_LEVELS = [
+    null,
+    {hp:500,   cost:0},
+    {hp:1000,  cost:100},
+    {hp:2000,  cost:300},
+    {hp:3000,  cost:800},
+    {hp:5000,  cost:1500},
+    {hp:10000, cost:4000},
+    {hp:20000, cost:10000},
+  ];
+  function upgradeCastle(){
+    const c=state.castle;
+    if(!c.alive){addMsg('성이 파괴됨!','#f66');return;}
+    if(c.level>=7){addMsg('최대 레벨!','#ffcc44');return;}
+    const next=CASTLE_LEVELS[c.level+1];
+    if(state.coins<next.cost){addMsg(`코인 부족! (${next.cost}🪙 필요)`,'#f66');return;}
+    state.coins-=next.cost;
+    c.level++;
+    const hpRatio=c.hp/c.maxHp;
+    c.maxHp=next.hp;
+    c.hp=Math.round(next.hp*hpRatio);
+    if(!isSolo) update(castleRef,{hp:c.hp,maxHp:c.maxHp,alive:true,level:c.level});
+    addMsg(`🏰 성 Lv.${c.level} 업그레이드! (최대HP:${next.hp})`,'#ffcc44');
+    updateUI();
+    document.getElementById('ctxMenu').style.display='none';
+  }
+
+  // ===== UPDATE =====
+  function update(dt){
+    if(state.gameOver) return;
+    state.time+=dt; state.syncTimer+=dt;
+    const elapsed=(Date.now()-state.startTime)/1000;
+
+    // Final evolution
+    if(elapsed>=720&&!state.finalEvolution){
+      state.finalEvolution=true; showWave('⚠️ FINAL EVOLUTION!'); state.spawnInterval=50;
+    }
+    // Wave
+    const wt=Math.floor(elapsed/120);
+    if(wt>state.waveLevel){
+      state.waveLevel=wt;
+      const wTypes=['slime','swordslime','fireslime','bat','golem','dragon'];
+      const nt=wTypes[Math.min(wt,wTypes.length-1)];
+      if(!state.spawnList.includes(nt)){state.spawnList.push(nt);showWave(`🌊 웨이브${wt}: ${MDEFS[nt]?'새 적':'?'}출현!`);}
+    }
+    // Spawn
+    state.spawnTimer+=dt;
+    // 시간이 지날수록 스폰 수 증가 (2분마다 +1, 최대 5마리)
+    const spawnCount = state.finalEvolution ? 5 : Math.min(5, 1 + Math.floor(elapsed/120));
+    if(state.spawnTimer>=state.spawnInterval){
+      state.spawnTimer=0;
+      for(let i=0;i<spawnCount;i++) spawnMonster(state.spawnList[Math.floor(Math.random()*state.spawnList.length)]);
+    }
+
+    // Player move
+    const p=state.player;
+    let dx=0,dy=0;
+    if(p.keys['w']||p.keys['arrowup']) dy-=p.speed;
+    if(p.keys['s']||p.keys['arrowdown']) dy+=p.speed;
+    if(p.keys['a']||p.keys['arrowleft']) dx-=p.speed;
+    if(p.keys['d']||p.keys['arrowright']) dx+=p.speed;
+    if(joyActive||joyDx!==0||joyDy!==0){ dx+=joyDx*p.speed; dy+=joyDy*p.speed; }
+    p.x=Math.max(10,Math.min(WORLD-10,p.x+dx));
+    p.y=Math.max(10,Math.min(WORLD-10,p.y+dy));
+
+    // Castle heal
+    if(state.castle.alive&&dist(p,state.castle)<120) p.hp=Math.min(p.maxHp,p.hp+5*(dt/60));
+
+    // Camera lerp
+    const cam=state.camera;
+    cam.x+=(p.x-VW/2-cam.x)*0.1;
+    cam.y+=(p.y-VH/2-cam.y)*0.1;
+    cam.x=Math.max(0,Math.min(WORLD-VW,cam.x));
+    cam.y=Math.max(0,Math.min(WORLD-VH,cam.y));
+
+    // Player attack
+    p.atkTimer+=dt;
+    if(p.atkTimer>=p.atkInterval/16.67){
+      p.atkTimer=0;
+      let near=null,nearD=200;
+      for(const m of state.monsters){if(m.flying)continue;const d=dist(p,m);if(d<nearD){nearD=d;near=m;}}
+      if(near){const vx=(near.x-p.x)/nearD*6,vy=(near.y-p.y)/nearD*6;state.projectiles.push({x:p.x,y:p.y,vx,vy,dmg:p.atkDmg,owner:'player',flying:false,id:nid()});}
+    }
+
+    // Soldiers
+    for(let i=state.soldiers.length-1;i>=0;i--){
+      const s=state.soldiers[i];
+      if(s.hp<=0){state.soldiers.splice(i,1);continue;}
+      if(s.mode==='follow'){
+        const fi=state.soldiers.filter(x=>x.mode==='follow');
+        const a=(fi.indexOf(s)/(fi.length||1))*Math.PI*2;
+        const tx=p.x+Math.cos(a)*35, ty=p.y+Math.sin(a)*35;
+        const dd=dist(s,{x:tx,y:ty});
+        if(dd>5){s.x+=(tx-s.x)/dd*s.speed;s.y+=(ty-s.y)/dd*s.speed;}
+      } else if(state.castle.alive){
+        const ci=state.soldiers.filter(x=>x.mode==='castle');
+        const a=(ci.indexOf(s)/(ci.length||1))*Math.PI*2;
+        const tx=state.castle.x+Math.cos(a)*55,ty=state.castle.y+Math.sin(a)*55;
+        const dd=dist(s,{x:tx,y:ty});
+        if(dd>5){s.x+=(tx-s.x)/dd*s.speed;s.y+=(ty-s.y)/dd*s.speed;}
+      }
+      s.atkTimer+=dt;
+      if(s.atkTimer>=60){
+        s.atkTimer=0;
+        let near=null,nearD=s.range;
+        for(const m of state.monsters){if(m.flying&&!s.flying)continue;const d=dist(s,m);if(d<nearD){nearD=d;near=m;}}
+        if(near){const vx=(near.x-s.x)/nearD*5,vy=(near.y-s.y)/nearD*5;state.projectiles.push({x:s.x,y:s.y,vx,vy,dmg:s.atk,owner:'soldier',flying:s.flying,id:nid()});}
+      }
+    }
+
+    // Buildings
+    for(let i=state.buildings.length-1;i>=0;i--){
+      const b=state.buildings[i];
+      if(b.hp<=0){state.buildings.splice(i,1);continue;}
+      if(b.type==='wall')continue;
+      b.atkTimer+=dt;
+      const intv=b.type==='bomb'?180:90;
+      if(b.atkTimer>=intv){
+        b.atkTimer=0;
+        const canFly=b.type==='arrow'||b.type==='barracks';
+        const tgts=state.monsters.filter(m=>(!m.flying||canFly)&&dist(b,m)<160).sort((a,c)=>dist(b,a)-dist(b,c));
+        if(b.type==='arrow'){for(let t=0;t<Math.min(3,tgts.length);t++){const m=tgts[t];const d=dist(b,m);state.projectiles.push({x:b.x,y:b.y,vx:(m.x-b.x)/d*7,vy:(m.y-b.y)/d*7,dmg:8,owner:'building',flying:true,id:nid()});}}
+        else if(b.type==='bomb'&&tgts.length>0){const m=tgts[0];const d=dist(b,m);state.projectiles.push({x:b.x,y:b.y,vx:(m.x-b.x)/d*4,vy:(m.y-b.y)/d*4,dmg:25,owner:'building',flying:false,aoe:40,id:nid()});}
+        else if(b.type==='ice'&&tgts.length>0){const m=tgts[0];const d=dist(b,m);state.projectiles.push({x:b.x,y:b.y,vx:(m.x-b.x)/d*6,vy:(m.y-b.y)/d*6,dmg:15,owner:'building',flying:true,freeze:true,id:nid()});}
+        else if(b.type==='electric'){for(let t=0;t<Math.min(4,tgts.length);t++){const m=tgts[t];const d=dist(b,m);state.projectiles.push({x:b.x,y:b.y,vx:(m.x-b.x)/d*9,vy:(m.y-b.y)/d*9,dmg:20,owner:'building',flying:true,shock:true,id:nid()});}}
+      }
+    }
+
+    // Monsters
+    for(let i=state.monsters.length-1;i>=0;i--){
+      const m=state.monsters[i];
+      if(m.hp<=0){addCoins(m.reward);spawnParticles(m.x,m.y,'#ffdd44');state.monsters.splice(i,1);continue;}
+      // 최종 목표: 성 or 플레이어
+      let tx=state.castle.alive?state.castle.x:p.x, ty=state.castle.alive?state.castle.y:p.y;
+      let bestD=dist(m,{x:tx,y:ty});
+      if(dist(m,p)<bestD){tx=p.x;ty=p.y;bestD=dist(m,p);}
+      Object.values(remoteStates).forEach(rp=>{
+        if(rp.castleAlive){const d=dist(m,{x:rp.castleX,y:rp.castleY});if(d<bestD){tx=rp.castleX;ty=rp.castleY;bestD=d;}}
+      });
+
+      // 경로상 가장 가까운 건물이 있으면 그 건물을 먼저 타겟으로
+      let blockTarget = null, blockDist = Infinity;
+      if(!m.flying){
+        for(const b of state.buildings){
+          const bd=dist(m,b);
+          if(bd < blockDist){ blockDist=bd; blockTarget=b; }
+        }
+      }
+      // 건물이 성보다 가깝고 진로를 막으면 건물 먼저 공격
+      if(blockTarget && blockDist < bestD + 60){
+        tx=blockTarget.x; ty=blockTarget.y;
+      }
+
+      const dd=dist(m,{x:tx,y:ty});
+      let spd=m.speed;
+      if(m.frozen>0){m.frozen-=dt;spd*=0.2;}
+      else if(m.shocked>0){m.shocked-=dt;spd*=0.5;}
+      if(dd>m.r+5){m.x+=(tx-m.x)/dd*spd;m.y+=(ty-m.y)/dd*spd;}
+
+      // 건물 충돌 (공중 유닛 제외)
+      if(!m.flying){
+        for(const b of state.buildings){
+          const bd=dist(m,b);
+          const minD=m.r+b.r;
+          if(bd<minD&&bd>0){
+            const push=(minD-bd)/bd;
+            m.x+=(m.x-b.x)*push;
+            m.y+=(m.y-b.y)*push;
+          }
+        }
+      }
+      m.atkTimer+=dt;
+      if(m.atkTimer>=90){
+        m.atkTimer=0;
+        if(!devMode&&dist(m,p)<m.r+20){p.hp-=m.atk;if(p.hp<=0){p.hp=0;state.gameOver=true;}}
+        if(!devMode&&state.castle.alive&&dist(m,state.castle)<m.r+state.castle.r){
+          sendCastleDamage(m.atk);
+        }
+        if(!devMode){for(const b of state.buildings){if(dist(m,b)<m.r+b.r)b.hp-=m.atk*0.5;}}
+      }
+    }
+
+    // DEV MODE: 코인 무제한, HP 풀 유지
+    if(devMode){ state.coins=999999; p.hp=p.maxHp; }
+
+    // Projectiles
+    for(let i=state.projectiles.length-1;i>=0;i--){
+      const proj=state.projectiles[i];
+      proj.x+=proj.vx; proj.y+=proj.vy;
+      if(proj.x<0||proj.x>WORLD||proj.y<0||proj.y>WORLD){state.projectiles.splice(i,1);continue;}
+      let hit=false;
+      for(let j=state.monsters.length-1;j>=0;j--){
+        const m=state.monsters[j];
+        if(m.flying&&!proj.flying)continue;
+        if(dist(proj,m)<m.r+5){
+          if(proj.aoe){for(const m2 of state.monsters)if(dist(proj,m2)<proj.aoe)m2.hp-=proj.dmg;spawnParticles(proj.x,proj.y,'#ff8800');}
+          else{ m.hp-=proj.dmg; if(proj.freeze){m.frozen=180;spawnParticles(m.x,m.y,'#88ddff');} if(proj.shock){m.shocked=90;spawnParticles(m.x,m.y,'#ffff44');} }
+          hit=true;break;
+        }
+      }
+      if(hit){state.projectiles.splice(i,1);}
+    }
+
+    // Particles
+    for(let i=state.particles.length-1;i>=0;i--){
+      const pt=state.particles[i];
+      pt.x+=pt.vx;pt.y+=pt.vy;pt.life-=dt;pt.vy-=0.02;
+      if(pt.life<=0)state.particles.splice(i,1);
+    }
+
+    // Firebase sync (매 6프레임마다)
+    state.syncTimer+=dt;
+    if(state.syncTimer>=6){state.syncTimer=0;pushMyState();}
+
+    updateUI();
+  }
+
+  // ===== DRAW =====
+  function drawHpBar(cx,cy,w,hp,max){
+    ctx.fillStyle='#222'; ctx.fillRect(cx-w/2,cy,w,5);
+    const r=Math.max(0,hp/max); ctx.fillStyle=r>0.5?'#4f4':r>0.25?'#fa0':'#f44';
+    ctx.fillRect(cx-w/2,cy,w*r,5);
+    ctx.strokeStyle='#555'; ctx.lineWidth=0.5; ctx.strokeRect(cx-w/2,cy,w,5);
+  }
+  function toScreen(wx,wy){ return [wx-state.camera.x, wy-state.camera.y]; }
+  function inView(wx,wy,m=60){ const [sx,sy]=toScreen(wx,wy); return sx>-m&&sx<VW+m&&sy>-m&&sy<VH+m; }
+
+  function drawSlime(cx,cy,r,color,variant){
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,0,false); ctx.lineTo(cx+r,cy+r*0.4); ctx.quadraticCurveTo(cx,cy+r*0.8,cx-r,cy+r*0.4); ctx.closePath();
+    if(variant==='fire'){const g=ctx.createRadialGradient(cx,cy,0,cx,cy,r);g.addColorStop(0,'#ffdd00');g.addColorStop(0.5,'#ff6600');g.addColorStop(1,'#cc0000');ctx.fillStyle=g;}
+    else ctx.fillStyle=color;
+    ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#111';
+    ctx.beginPath();ctx.arc(cx-r*0.3,cy-r*0.1,r*0.15,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+r*0.3,cy-r*0.1,r*0.15,0,Math.PI*2);ctx.fill();
+    if(variant==='sword'){ctx.fillStyle='#aaa';ctx.fillRect(cx+r*0.9,cy-r*0.8,r*0.2,r*1.2);}
+    if(variant==='fire'){for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(cx+i*r*0.3,cy-r*0.9);ctx.lineTo(cx+i*r*0.3-r*0.15,cy-r*0.5);ctx.lineTo(cx+i*r*0.3+r*0.15,cy-r*0.5);ctx.closePath();ctx.fillStyle='#ff9900';ctx.fill();}}
+    ctx.restore();
+  }
+  function drawBat(cx,cy,r){
+    ctx.save();ctx.fillStyle='#442266';
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx-r*2,cy-r*0.5);ctx.lineTo(cx-r*1.5,cy+r*0.3);ctx.lineTo(cx-r*0.8,cy+r*0.2);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+r*2,cy-r*0.5);ctx.lineTo(cx+r*1.5,cy+r*0.3);ctx.lineTo(cx+r*0.8,cy+r*0.2);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle='#6633aa';ctx.fill();ctx.strokeStyle='#aa77ff';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='#f44';ctx.beginPath();ctx.arc(cx-r*0.35,cy-r*0.1,r*0.2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+r*0.35,cy-r*0.1,r*0.2,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  function drawGolem(cx,cy,r){
+    ctx.save();
+    const pts=[];for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2-Math.PI/8;pts.push([cx+Math.cos(a)*r,cy+Math.sin(a)*r]);}
+    ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(const p2 of pts)ctx.lineTo(p2[0],p2[1]);ctx.closePath();
+    const g=ctx.createRadialGradient(cx,cy,0,cx,cy,r);g.addColorStop(0,'#aaa');g.addColorStop(1,'#555');
+    ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.stroke();
+    ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-r*0.3,cy-r*0.5);ctx.lineTo(cx+r*0.1,cy+r*0.2);ctx.stroke();
+    ctx.fillStyle='#f60';ctx.beginPath();ctx.arc(cx-r*0.3,cy-r*0.1,r*0.18,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+r*0.3,cy-r*0.1,r*0.18,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  function drawDragon(cx,cy,r){
+    ctx.save();
+    ctx.fillStyle='rgba(180,0,0,0.7)';
+    ctx.beginPath();ctx.moveTo(cx-r*0.5,cy);ctx.bezierCurveTo(cx-r*2.5,cy-r*1.5,cx-r*3,cy+r,cx-r*1.5,cy+r*0.5);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(cx+r*0.5,cy);ctx.bezierCurveTo(cx+r*2.5,cy-r*1.5,cx+r*3,cy+r,cx+r*1.5,cy+r*0.5);ctx.closePath();ctx.fill();
+    const bg=ctx.createRadialGradient(cx,cy,0,cx,cy,r*1.2);bg.addColorStop(0,'#cc3300');bg.addColorStop(1,'#660000');
+    ctx.fillStyle=bg;ctx.beginPath();ctx.ellipse(cx,cy,r*1.3,r*0.9,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#ff4400';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#dd2200';ctx.beginPath();ctx.ellipse(cx-r*1.1,cy-r*0.1,r*0.6,r*0.45,-0.3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ff0';ctx.beginPath();ctx.arc(cx-r*1.25,cy-r*0.1,r*0.15,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  function drawSoldier(cx,cy,r,type){
+    ctx.save();
+    const colors={arrow:'#5588cc',spear:'#cc8844',fire:'#cc4400'};
+    ctx.fillStyle=colors[type]||'#5588cc';
+    ctx.fillRect(cx-r*0.6,cy-r*0.3,r*1.2,r*1.1);
+    ctx.beginPath();ctx.arc(cx,cy-r*0.35,r*0.55,Math.PI,0,false);ctx.fill();
+    ctx.fillStyle='#ffcc99';ctx.beginPath();ctx.arc(cx,cy-r*0.1,r*0.3,0,Math.PI*2);ctx.fill();
+    if(type==='arrow'){ctx.strokeStyle='#884400';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx+r*0.9,cy,r*0.7,-0.8,0.8);ctx.stroke();}
+    else if(type==='spear'){ctx.strokeStyle='#884400';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cx,cy-r*0.5);ctx.lineTo(cx,cy+r*1.5);ctx.stroke();}
+    else{ctx.strokeStyle='#882200';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cx+r*0.5,cy);ctx.lineTo(cx+r*1.3,cy-r*0.7);ctx.stroke();ctx.beginPath();ctx.arc(cx+r*1.4,cy-r*0.8,r*0.25,0,Math.PI*2);ctx.fillStyle='#ff6600';ctx.fill();}
+    ctx.restore();
+  }
+  function drawCastle(cx,cy,r,hp,maxHp,alive,color){
+    ctx.save();
+    const size=r*2.8;
+    ctx.font=`${size}px serif`;
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    if(!alive){ctx.globalAlpha=0.4;ctx.filter='grayscale(100%)';}
+    ctx.fillText('🏰',cx,cy);
+    ctx.filter='none';ctx.globalAlpha=1;
+    if(alive) drawHpBar(cx,cy-r*1.8,r*2.2,hp,maxHp);
+    else{
+      ctx.fillStyle='rgba(255,60,0,0.5)';
+      ctx.font=`${r*1.2}px serif`;
+      ctx.fillText('💥',cx,cy);
+    }
+    ctx.restore();
+  }
+  function drawPlayer(cx,cy,r,color){
+    ctx.save();
+    ctx.fillStyle=color||'#4466cc';ctx.fillRect(cx-r*0.45,cy-r*0.2,r*0.9,r*0.85);
+    ctx.fillStyle='#aabbdd';ctx.beginPath();ctx.arc(cx,cy-r*0.25,r*0.5,Math.PI,0,false);ctx.fill();ctx.fillRect(cx-r*0.5,cy-r*0.28,r,r*0.15);
+    ctx.fillStyle='#ffcc99';ctx.beginPath();ctx.arc(cx,cy,r*0.28,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#ddd';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(cx+r*0.7,cy-r*0.6);ctx.lineTo(cx+r*0.7,cy+r*0.8);ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw(){
+    if(state.gameOver){
+      ctx.fillStyle='rgba(0,0,0,0.85)';ctx.fillRect(0,0,VW,VH);
+      ctx.fillStyle='#ff4444';ctx.font='bold 24px serif';ctx.textAlign='center';
+      ctx.fillText('💀 성이 함락됐습니다!',VW/2,VH/2-30);
+      ctx.fillStyle='#ffcc44';ctx.font='16px Courier New';
+      ctx.fillText('GAME OVER',VW/2,VH/2+5);
+      ctx.fillStyle='#aaa';ctx.font='12px Courier New';
+      ctx.fillText('새로고침으로 다시 시작',VW/2,VH/2+35);
+      return;
+    }
+    const cam=state.camera;
+    ctx.clearRect(0,0,VW,VH);
+    ctx.fillStyle='#1a2a1a';ctx.fillRect(0,0,VW,VH);
+    // 그리드
+    ctx.strokeStyle='rgba(100,150,100,0.12)';ctx.lineWidth=1;
+    const gs=100,sx=-(cam.x%gs),sy2=-(cam.y%gs);
+    for(let x=sx;x<VW;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,VH);ctx.stroke();}
+    for(let y=sy2;y<VH;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(VW,y);ctx.stroke();}
+
+    // 다른 플레이어 그리기 (보간 적용)
+    Object.values(remoteStates).forEach(rp=>{
+      if(!rp.x) return;
+      const pidx=rp.idx||0;
+      const pcolor=PLAYER_COLORS[pidx];
+      // 부드러운 위치 보간
+      if(!rp._rx){ rp._rx=rp.x; rp._ry=rp.y; }
+      rp._rx += (rp.x - rp._rx) * 0.3;
+      rp._ry += (rp.y - rp._ry) * 0.3;
+      // 다른 플레이어 캐릭터 (보간 위치 사용)
+      if(inView(rp._rx,rp._ry,20)){
+        const [sx2,sy3]=toScreen(rp._rx,rp._ry);
+        drawPlayer(sx2,sy3,14,pcolor);
+        ctx.fillStyle=pcolor;ctx.font='9px Courier New';ctx.textAlign='center';
+        ctx.fillText(PLAYER_NAMES[pidx],sx2,sy3-20);
+      }
+      // 다른 플레이어 병사
+      if(rp.soldiers) rp.soldiers.forEach(s=>{
+        if(!inView(s.x,s.y,10))return;
+        const [sx2,sy3]=toScreen(s.x,s.y);
+        ctx.fillStyle=pcolor;ctx.beginPath();ctx.arc(sx2,sy3,6,0,Math.PI*2);ctx.fill();
+      });
+      // 다른 플레이어 건물
+      if(rp.buildings) rp.buildings.forEach(b=>{
+        if(!inView(b.x,b.y,10))return;
+        const [sx2,sy3]=toScreen(b.x,b.y);
+        ctx.fillStyle=pcolor+'88';ctx.fillRect(sx2-10,sy3-10,20,20);
+        ctx.strokeStyle=pcolor;ctx.lineWidth=1;ctx.strokeRect(sx2-10,sy3-10,20,20);
+      });
+    });
+
+    // 내 성
+    const [csx,csy]=toScreen(state.castle.x,state.castle.y);
+    if(inView(state.castle.x,state.castle.y,100)){
+      drawCastle(csx,csy,state.castle.r,state.castle.hp,state.castle.maxHp,state.castle.alive,PLAYER_COLORS[myIdx]);
+      if(state.castle.alive){
+        ctx.save();ctx.strokeStyle='rgba(100,255,100,0.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+        ctx.beginPath();ctx.arc(csx,csy,120,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+      }
+      ctx.fillStyle='#ffcc44';ctx.font='bold 11px Courier New';ctx.textAlign='center';
+      ctx.fillText('🏰 공유 성',csx,csy-75);
+    }
+
+    // 그리드 배치 오버레이
+    if(placingMode){
+      const {ox,oy}=gridOrigin();
+      ctx.save();
+      // 그리드 칸 그리기
+      for(let c=0;c<GRID_COLS;c++){
+        for(let r=0;r<GRID_ROWS;r++){
+          const [sx2,sy3]=toScreen(ox+c*CELL, oy+r*CELL);
+          ctx.strokeStyle='rgba(100,200,255,0.25)';ctx.lineWidth=0.5;
+          ctx.strokeRect(sx2,sy3,CELL,CELL);
+        }
+      }
+      // 호버 미리보기
+      if(hoverCell){
+        const {col,row}=hoverCell;
+        const s=getBuildingSize(placingMode,placingRotated);
+        const ok=canPlace(col,row,placingMode,placingRotated);
+        const [px,py]=toScreen(ox+col*CELL, oy+row*CELL);
+        ctx.fillStyle=ok?'rgba(100,255,100,0.3)':'rgba(255,50,50,0.3)';
+        ctx.fillRect(px,py,s.w*CELL,s.h*CELL);
+        ctx.strokeStyle=ok?'#4f4':'#f44';ctx.lineWidth=2;
+        ctx.strokeRect(px,py,s.w*CELL,s.h*CELL);
+        // 이모지 미리보기
+        const emoji={wall:'🧱',bomb:'💣',arrow:'🏹',barracks:'🏠',ice:'❄️',electric:'⚡'};
+        ctx.font=`${s.w*CELL*0.5}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.globalAlpha=0.7;
+        ctx.fillText(emoji[placingMode]||'?', px+s.w*CELL/2, py+s.h*CELL/2);
+        ctx.globalAlpha=1;
+      }
+      ctx.restore();
+    }
+
+    // 건물
+    state.buildings.forEach(b=>{
+      if(!inView(b.x,b.y,120))return;
+      const s=getBuildingSize(b.type,b.rotated);
+      const bw=s.w*CELL, bh=s.h*CELL;
+      const [sx2,sy3]=toScreen(b.x,b.y); // b.x,b.y = 건물 중심
+      const emoji={wall:'🧱',bomb:'💣',arrow:'🏹',barracks:'🏠',ice:'❄️',electric:'⚡'};
+      const bc={wall:'#8899aa',bomb:'#667755',arrow:'#998866',barracks:'#778899',ice:'#4499bb',electric:'#999933'};
+      const color=bc[b.type]||'#888';
+      const bx=sx2-bw/2, by=sy3-bh/2;
+
+      if(b.type==='wall'){
+        // 방벽: 낮은 성벽 (2×1 or 1×2)
+        ctx.fillStyle=color;ctx.fillRect(bx,by,bw,bh);
+        ctx.strokeStyle='#556';ctx.lineWidth=1.5;ctx.strokeRect(bx,by,bw,bh);
+        // 벽돌 무늬
+        ctx.strokeStyle='rgba(0,0,0,0.2)';ctx.lineWidth=0.5;
+        ctx.beginPath();ctx.moveTo(bx,by+bh/2);ctx.lineTo(bx+bw,by+bh/2);ctx.stroke();
+        if(!b.rotated){ctx.beginPath();ctx.moveTo(bx+bw/2,by);ctx.lineTo(bx+bw/2,by+bh);ctx.stroke();}
+        // 흉벽 톱니
+        ctx.fillStyle=color;
+        const tW=CELL*0.3, tH=CELL*0.3;
+        if(!b.rotated){
+          [bx+bw*0.1, bx+bw*0.45, bx+bw*0.7].forEach(tx=>{ctx.fillRect(tx,by-tH,tW,tH);ctx.strokeStyle='#556';ctx.lineWidth=1;ctx.strokeRect(tx,by-tH,tW,tH);});
+        } else {
+          [by+bh*0.1, by+bh*0.45, by+bh*0.7].forEach(ty=>{ctx.fillRect(bx-tH,ty,tH,tW);ctx.strokeStyle='#556';ctx.lineWidth=1;ctx.strokeRect(bx-tH,ty,tH,tW);});
+        }
+        ctx.font=`${Math.min(bw,bh)*0.7}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('🧱',sx2,sy3);
+      } else {
+        // 탑: 2×4 칸
+        ctx.fillStyle=color;ctx.fillRect(bx,by,bw,bh);
+        ctx.strokeStyle='#334';ctx.lineWidth=1.5;ctx.strokeRect(bx,by,bw,bh);
+        // 벽돌 무늬
+        ctx.strokeStyle='rgba(0,0,0,0.18)';ctx.lineWidth=0.5;
+        const rows=4,cols=2;
+        for(let r=1;r<rows;r++){ctx.beginPath();ctx.moveTo(bx,by+r*bh/rows);ctx.lineTo(bx+bw,by+r*bh/rows);ctx.stroke();}
+        for(let r=0;r<rows;r++){
+          const off=r%2===0?0:bw/2;
+          ctx.beginPath();ctx.moveTo(bx+off,by+r*bh/rows);ctx.lineTo(bx+off,by+(r+1)*bh/rows);ctx.stroke();
+        }
+        // 흉벽 톱니 3개
+        const th2=CELL*0.4;
+        const tw2=bw/3;
+        [0,1,2].forEach(i=>{
+          ctx.fillStyle=color;ctx.fillRect(bx+i*tw2+2,by-th2,tw2-4,th2);
+          ctx.strokeStyle='#334';ctx.lineWidth=1;ctx.strokeRect(bx+i*tw2+2,by-th2,tw2-4,th2);
+        });
+        // 창문 2개
+        ctx.fillStyle='rgba(0,0,50,0.5)';
+        const winH=bh*0.18, winW=bw*0.22;
+        ctx.beginPath();ctx.rect(bx+bw*0.12,by+bh*0.25,winW,winH);ctx.fill();
+        ctx.beginPath();ctx.rect(bx+bw*0.62,by+bh*0.25,winW,winH);ctx.fill();
+        // 이모지 (탑 너비에 맞게)
+        ctx.font=`${bw*0.7}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(emoji[b.type]||'?',sx2,by-th2/2);
+      }
+      drawHpBar(sx2,sy3+bh/2+4,bw*0.8,b.hp,b.maxHp);
+    });
+
+    // 몬스터
+    state.monsters.forEach(m=>{
+      if(!inView(m.x,m.y))return;
+      const [sx2,sy3]=toScreen(m.x,m.y);
+      const r=m.r;
+      if(m.type==='slime') drawSlime(sx2,sy3,r,m.color,'normal');
+      else if(m.type==='swordslime') drawSlime(sx2,sy3,r,m.color,'sword');
+      else if(m.type==='fireslime') drawSlime(sx2,sy3,r,m.color,'fire');
+      else if(m.type==='bat') drawBat(sx2,sy3,r);
+      else if(m.type==='golem') drawGolem(sx2,sy3,r);
+      else if(m.type==='dragon') drawDragon(sx2,sy3,r);
+      drawHpBar(sx2,sy3-r-8,r*1.8,m.hp,m.maxHp);
+      // 얼음/전기 상태 표시
+      if(m.frozen>0){ctx.save();ctx.strokeStyle='#88ddff';ctx.lineWidth=2;ctx.globalAlpha=0.7;ctx.beginPath();ctx.arc(sx2,sy3,r+3,0,Math.PI*2);ctx.stroke();ctx.restore();}
+      if(m.shocked>0){ctx.save();ctx.strokeStyle='#ffff44';ctx.lineWidth=2;ctx.globalAlpha=0.7;ctx.beginPath();ctx.arc(sx2,sy3,r+3,0,Math.PI*2);ctx.stroke();ctx.restore();}
+    });
+
+    // 병사
+    state.soldiers.forEach(s=>{
+      if(!inView(s.x,s.y))return;
+      const [sx2,sy3]=toScreen(s.x,s.y);
+      drawSoldier(sx2,sy3,12,s.type);
+      drawHpBar(sx2,sy3-18,20,s.hp,s.maxHp);
+    });
+
+    // 투사체
+    state.projectiles.forEach(proj=>{
+      if(!inView(proj.x,proj.y,10))return;
+      const [sx2,sy3]=toScreen(proj.x,proj.y);
+      ctx.save();ctx.fillStyle=proj.owner==='player'?'#88ddff':proj.aoe?'#ff8800':'#ffdd44';
+      ctx.shadowBlur=4;ctx.shadowColor=ctx.fillStyle;
+      ctx.beginPath();ctx.arc(sx2,sy3,proj.aoe?5:3,0,Math.PI*2);ctx.fill();ctx.restore();
+    });
+
+    // 파티클
+    state.particles.forEach(pt=>{
+      if(!inView(pt.x,pt.y,10))return;
+      const [sx2,sy3]=toScreen(pt.x,pt.y);
+      ctx.save();ctx.globalAlpha=pt.life/pt.maxLife;ctx.fillStyle=pt.color;
+      ctx.beginPath();ctx.arc(sx2,sy3,3,0,Math.PI*2);ctx.fill();ctx.restore();
+    });
+
+    // 내 플레이어
+    const [psx,psy]=toScreen(state.player.x,state.player.y);
+    drawPlayer(psx,psy,16,PLAYER_COLORS[myIdx]);
+    drawHpBar(psx,psy-28,28,state.player.hp,state.player.maxHp);
+
+    // 미니맵
+    mCtx.fillStyle='#0a1a0a';mCtx.fillRect(0,0,MINI,MINI);
+    // 공유 성 (중앙)
+    mCtx.fillStyle='#ffcc44';
+    mCtx.fillRect(CASTLE_X*SCALE-4,CASTLE_Y*SCALE-4,8,8);
+    mCtx.fillStyle='#fff';mCtx.font='8px serif';mCtx.textAlign='center';
+    mCtx.fillText('🏰',CASTLE_X*SCALE,CASTLE_Y*SCALE+3);
+    // 다른 플레이어
+    Object.values(remoteStates).forEach(rp=>{
+      if(rp.x){
+        mCtx.fillStyle=PLAYER_COLORS[rp.idx||0];
+        mCtx.beginPath();mCtx.arc(rp.x*SCALE,rp.y*SCALE,2,0,Math.PI*2);mCtx.fill();
+      }
+    });
+    // 몬스터
+    state.monsters.forEach(m=>{mCtx.fillStyle=m.flying?'#aa88ff':'#ff4444';mCtx.fillRect(m.x*SCALE-1,m.y*SCALE-1,2,2);});
+    // 내 플레이어
+    mCtx.fillStyle='#fff';mCtx.beginPath();mCtx.arc(state.player.x*SCALE,state.player.y*SCALE,2.5,0,Math.PI*2);mCtx.fill();
+    // 뷰포트
+    mCtx.strokeStyle='rgba(255,255,255,0.4)';mCtx.lineWidth=0.5;
+    mCtx.strokeRect(cam.x*SCALE,cam.y*SCALE,VW*SCALE,VH*SCALE);
+  }
+
+  // 키보드
+  window.addEventListener('keydown',e=>{ state.player.keys[e.key.toLowerCase()]=true; if(e.key==='Escape'){ document.getElementById('ctxMenu').style.display='none'; if(placingMode) cancelPlacing(); } });
+  window.addEventListener('keyup',e=>{ state.player.keys[e.key.toLowerCase()]=false; });
+  canvas.addEventListener('mousemove',e=>{
+    if(!placingMode) return;
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=VW/rect.width, scaleY=VH/rect.height;
+    const wx=(e.clientX-rect.left)*scaleX+state.camera.x;
+    const wy=(e.clientY-rect.top)*scaleY+state.camera.y;
+    const {ox,oy}=gridOrigin();
+    hoverCell={col:Math.floor((wx-ox)/CELL), row:Math.floor((wy-oy)/CELL)};
+  });
+  canvas.addEventListener('touchmove',e=>{
+    if(!placingMode) return;
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=VW/rect.width, scaleY=VH/rect.height;
+    const t=e.touches[0];
+    const s=getBuildingSize(placingMode,placingRotated);
+    // 손가락 끝이 건물 하단에 오도록 건물 높이만큼 위로 오프셋
+    const offsetY = s.h * CELL;
+    const wx=(t.clientX-rect.left)*scaleX+state.camera.x;
+    const wy=(t.clientY-rect.top)*scaleY+state.camera.y - offsetY;
+    const {ox,oy}=gridOrigin();
+    hoverCell={col:Math.floor((wx-ox)/CELL), row:Math.floor((wy-oy)/CELL)};
+  },{passive:false});
+
+  canvas.addEventListener('click',e=>{
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=VW/rect.width, scaleY=VH/rect.height;
+    const isTouchEvent = e.pointerType === 'touch';
+    const mx=(e.clientX-rect.left)*scaleX+state.camera.x;
+    let my=(e.clientY-rect.top)*scaleY+state.camera.y;
+
+    // 배치 모드
+    if(placingMode){
+      const {ox,oy}=gridOrigin();
+      const s=getBuildingSize(placingMode,placingRotated);
+      if(isTouchEvent) my -= s.h * CELL;
+      const col=Math.floor((mx-ox)/CELL);
+      const row=Math.floor((my-oy)/CELL);
+      if(canPlace(col,row,placingMode,placingRotated)){
+        const costs={wall:15,bomb:30,arrow:25,barracks:40,ice:45,electric:55};
+        const hps={wall:300,bomb:100,arrow:100,barracks:100,ice:100,electric:100};
+        const s=getBuildingSize(placingMode,placingRotated);
+        const bx=ox+col*CELL+s.w*CELL/2;
+        const by=oy+row*CELL+s.h*CELL/2;
+        state.coins-=costs[placingMode];
+        state.buildings.push({x:bx,y:by,type:placingMode,rotated:placingRotated,hp:hps[placingMode],maxHp:hps[placingMode],r:Math.max(s.w,s.h)*CELL/2,atkTimer:0,id:nid()});
+        addMsg(`${placingMode} 건설!`,'#aaf');
+        placingMode=null; hoverCell=null;
+        document.getElementById('rotateBtn').style.display='none';
+        document.getElementById('cancelBtn').style.display='none';
+        updateUI();
+      } else {
+        addMsg('배치 불가!','#f66');
+      }
+      return;
+    }
+
+    // 병사 클릭 → 삭제 확인
+    for(let i=0;i<state.soldiers.length;i++){
+      const s=state.soldiers[i];
+      if(dist({x:mx,y:my},s)<18){
+        if(confirm(`${s.type} 병사를 해고할까요? (코인 환급 없음)`)){
+          state.soldiers.splice(i,1);
+          addMsg('병사 해고!','#faa');
+        }
+        return;
+      }
+    }
+    // 건물 클릭 → 삭제 확인
+    for(let i=0;i<state.buildings.length;i++){
+      const b=state.buildings[i];
+      if(dist({x:mx,y:my},b)<25){
+        if(confirm(`${b.type} 건물을 철거할까요? (코인 환급 없음)`)){
+          state.buildings.splice(i,1);
+          addMsg('건물 철거!','#faa');
+        }
+        return;
+      }
+    }
+    // 내 성 클릭
+    if(dist({x:mx,y:my},state.castle)<state.castle.r+10&&state.castle.alive){
+      const c=state.castle;
+      const menu=document.getElementById('ctxMenu');
+      menu.style.display='block';
+      menu.style.left='50%'; menu.style.top='35%'; menu.style.transform='translate(-50%,-50%)';
+      const next=CASTLE_LEVELS[c.level+1];
+      const c1=document.getElementById('c1');
+      const c2=document.getElementById('c2');
+      const c3=document.getElementById('c3');
+      c1.style.display='block';
+      c1.textContent=c.level<7?`⬆️ 성 업그레이드 Lv.${c.level}→${c.level+1} (${next.cost}🪙)`:`🏰 최대 레벨 (Lv.7)`;
+      c1.onclick=()=>upgradeCastle();
+      c2.style.display='block';
+      c2.textContent=`🏰 현재 Lv.${c.level} HP:${Math.ceil(c.hp)}/${c.maxHp}`;
+      c2.onclick=()=>{};
+      c3.style.display='block';
+      c3.textContent=`⚔️ 성 배치 병사 고용`;
+      c3.onclick=()=>hire('castle');
+      return;
+    }
+    // 내 플레이어 클릭
+    if(dist({x:mx,y:my},state.player)<25){ hire('follow');return; }
+    document.getElementById('ctxMenu').style.display='none';
+  });
+  document.addEventListener('click',e=>{ if(!e.target.closest('#ctxMenu')&&!e.target.closest('#shopPanel')) document.getElementById('ctxMenu').style.display='none'; });
+
+  // joystick 위치 조정
+  function reposJoy(){
+    const shop=document.getElementById('shopPanel');
+    if(shop) document.getElementById('joystickZone').style.bottom=(shop.offsetHeight+8)+'px';
+  }
+  reposJoy(); window.addEventListener('resize',reposJoy); setTimeout(reposJoy,300);
+
+  return { update, draw, state, buyAtkSpd, hire, hireSoldier, buyBuilding, rebuild, upgradeCastle, toggleRotate, cancelPlacing, getPlacingMode };
+}
+</script>
+</body>
+</html>
